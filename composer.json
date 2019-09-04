@@ -1,5 +1,5 @@
 {
-    "name": "gliver/core",
+    "name": "gliver/framework",
     "description": "This is a collection of all the PHP classes that make Gliver a real MVC framework",
     "type": "package",
     "license": "MIT",
