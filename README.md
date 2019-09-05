@@ -1,2 +1,2 @@
 # core
-This repo contains the main code that provides the functionality of the Gliver framework.
+This repo contains the classes that provides the functionality of the Gliver framework.
