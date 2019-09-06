@@ -1,17 +1,17 @@
-<?php namespace Helpers\Upload;
+<?php namespace Gliver\Upload;
 
 /**
  *This class handles all exceptions thrown by Upload Class
  *
- * @author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- * @copyright 2015 - 2020 Geoffrey Oliver
+ * @author Geoffrey Okongo <geoffrey@gliver.org>
+ * @copyright 2015 - 2030 Geoffrey Okongo
  * @category Exceptions
- * @package Helpers\Upload\UploadException
- * @link https://github.com/gliver-mvc/gliver
+ * @package Gliver\Upload\UploadException
+ * @link https://github.com/gliverphp/framework
  * @license http://opensource.org/licenses/MIT MIT License
- * @version 1.0.1
+ * @version 2.0.1
  */
 
-use Helpers\Exceptions\HelperException;
+use Gliver\Exceptions\HelperException;
 
 class UploadException extends HelperException {}

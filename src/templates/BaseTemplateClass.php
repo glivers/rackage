@@ -1,18 +1,18 @@
-<?php namespace Drivers\Templates;
+<?php namespace Gliver\Templates;
 
 /**
  *This class is the base class that handles template processing 
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Drivers\Templates
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Templates
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Drivers\Templates\GrammarMapTrait;
-use Drivers\Templates\TemplateParserClass;
+use Gliver\Templates\GrammarMapTrait;
+use Gliver\Templates\TemplateParserClass;
 
 class BaseTemplateClass extends TemplateParserClass {
 

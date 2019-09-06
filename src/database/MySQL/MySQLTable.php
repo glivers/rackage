@@ -1,21 +1,21 @@
-<?php namespace Drivers\Database\MySQL;
+<?php namespace Gliver\Database\MySQL;
 
 /**
  *This class parses doc blocks into valid table columns.
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Drivers\Database
- *@package Drivers\Database\MySQL\MySQLTable
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver\Database
+ *@package Gliver\Database\MySQL\MySQLTable
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\Path\Path;
-use Helpers\File\FileInfo;
-use Helpers\File\FileHandler;
-use Drivers\Database\MySQL\MySQLResponseObject;
-use Drivers\Database\MySQL\MySQLException;
+use Gliver\Path\Path;
+use Gliver\File\FileInfo;
+use Gliver\File\FileHandler;
+use Gliver\Database\MySQL\MySQLResponseObject;
+use Gliver\Database\MySQL\MySQLException;
 
 class MySQLTable {
 

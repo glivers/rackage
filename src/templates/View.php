@@ -1,19 +1,19 @@
-<?php namespace Drivers\Templates;
+<?php namespace Gliver\Templates;
 
 /**
  *This class handles rendering of view files
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright Copyright (c) 2015 - 2020 Geoffrey Oliver
- *@link http://libraries.gliver.io
- *@category Core
- *@package Core\Helpers\View
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
+ *@link https://github.com/gliverphp/framework
+ *@category Gliver
+ *@package Gliver\View
  */
 
-use Drivers\Registry\Registry;
-use Helpers\Path\Path;
-use Drivers\Templates\BaseTemplateClass;
-use Drivers\Templates\TemplateException;
+use Gliver\Registry\Registry;
+use Gliver\Path\Path;
+use Gliver\Templates\BaseTemplateClass;
+use Gliver\Templates\TemplateException;
 
 class View {
 

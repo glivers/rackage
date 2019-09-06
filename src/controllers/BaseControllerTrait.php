@@ -2,16 +2,16 @@
 
 /**
  *This trait with magic class provide getters and setters for the base controller class
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Drivers\Controllers
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Drivers\Controllers
+ *@link https://github.com/gliverphp/gliver
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Drivers\Registry\Registry;
+use Gliver\Registry\Registry;
 
 trait  BaseControllerTrait {
 

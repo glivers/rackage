@@ -1,4 +1,4 @@
-<?php namespace Drivers\Registry;
+<?php namespace Gliver\Registry;
 
 /**
  *This class creates and stores instances of objects
@@ -7,15 +7,15 @@
  *initializes and stores instances of objects, this helps to avoid instantiating multiple instances 
  *of the same object while the same instance would suffice
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver 
- *@category Core
- *@package Core\Drivers
- *@link core.gliver.io
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo 
+ *@category Gliver
+ *@package Gliver\Gliver
+ *@link 
  */
-use Drivers\Database\BaseDb;
-use Drivers\Cache\CacheBase;
-use Drivers\Templates\BaseTemplateClass;
+use Gliver\Database\BaseDb;
+use Gliver\Cache\CacheBase;
+use Gliver\Templates\BaseTemplateClass;
 
 class Registry {
 
