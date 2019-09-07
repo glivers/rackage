@@ -1,4 +1,4 @@
-<?php namespace Helpers\Exceptions;
+<?php namespace Gliver\Exceptions;
 
 /**
  *This class handles all exceptions thrown by Helper Classes

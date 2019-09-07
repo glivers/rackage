@@ -1,20 +1,20 @@
-<?php namespace Drivers\Routes;
+<?php namespace Gliver\Routes;
 
 /**
  *This class performs url resolving. 
  *It inspects the input url and gets the appropriate controller and method to launch based on the 
  *defined or infered routes
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Drivers
- *@link core.gliver.io
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Drivers\ArrayHelper\ArrayHelper;
+use Gliver\ArrayHelper\ArrayHelper;
 
 class BaseRouteClass {
 

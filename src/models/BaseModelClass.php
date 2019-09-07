@@ -1,21 +1,21 @@
-<?php namespace Drivers\Models;
+<?php namespace Gliver\Models;
 
 /**
  *This is the Base Model class that all Model Classes extend. All methods in this class
  *are implemented in a static mannger so no instance of this can be created.
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Drivers
- *@package Drivers\Models\BaseModelClass
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Models\BaseModelClass
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Drivers\Registry;
-use Drivers\Database\MySQL\MySQLTable;
-use Drivers\ModelException;
+use Gliver\Registry;
+use Gliver\Database\MySQL\MySQLTable;
+use Gliver\ModelException;
 
 class BaseModelClass {
 

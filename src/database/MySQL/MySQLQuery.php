@@ -1,20 +1,20 @@
-<?php namespace Drivers\Database\MySQL;
+<?php namespace Gliver\Database\MySQL;
 
 /**
  *This class writes MySQLi vendor-specific database code
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Drivers\Database
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Database
+ *@link https://github.com/gliverphp/gliver
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\ArrayHelper\ArrayHelper as ArrayUtility;
-use Drivers\Database\MySQL\MySQLResultObject;
-use Drivers\Database\MySQL\MySQLException;
+use Gliver\ArrayHelper\ArrayHelper as ArrayUtility;
+use Gliver\Database\MySQL\MySQLResultObject;
+use Gliver\Database\MySQL\MySQLException;
 
 class MySQLQuery {
 

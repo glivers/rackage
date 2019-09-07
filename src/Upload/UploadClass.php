@@ -1,22 +1,22 @@
-<?php namespace Helpers\Upload;
+<?php namespace Gliver\Upload;
 
 /**
  *This class performs files uploads on the server. *
  *This is the implementation class of the Upload class. .
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Helpers
- *@package Helpers\Upload
- *@link core.gliver.io
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Upload
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\Path\Path;
-use Drivers\Registry;
-use Helpers\Upload\UploadException;
-use Helpers\Upload\UploadResponseClass;
+use Gliver\Path\Path;
+use Gliver\Registry;
+use Gliver\Upload\UploadException;
+use Gliver\Upload\UploadResponseClass;
 
 class UploadClass {
 

@@ -1,17 +1,17 @@
-<?php namespace Helpers\StringHelper;
+<?php namespace Gliver\StringHelper;
 
 /**
  *This class performs repetative String  functions.
  *
  *This class implements Singleton and cannot be subclassed. It sanitizes on our strings before we use them.
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Drivers
- *@link core.gliver.io
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
 class StringHelper {

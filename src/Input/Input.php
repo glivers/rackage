@@ -1,19 +1,19 @@
-<?php namespace Helpers\Input;
+<?php namespace Gliver\Input;
 
 /**
  *This class handles post and get input data
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Helpers
- *@package Helpers\Input\Input
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Input\Input
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\Input\InputClass;
-use Helpers\Exceptions\HelperException;
+use Gliver\Input\InputClass;
+use Gliver\Exceptions\HelperException;
 
 class Input {
 

@@ -1,14 +1,14 @@
-<?php namespace Helpers\Session;
+<?php namespace Gliver\Session;
 /**
  *This class handles php session operations
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Helpers\Sessions
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Sessions
+ *@link https://github.com/gliverphp/gliver
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
 class Session {

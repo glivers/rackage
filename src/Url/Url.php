@@ -1,18 +1,18 @@
-<?php namespace Helpers\Url;
+<?php namespace Gliver\Url;
 
 /**
  *This class resolves urls and returns the appropriate url string required
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright Copyright (c) 2015 - 2020 Geoffrey Oliver
- *@link http://libraries.gliver.io
- *@category Core
- *@package Core\Helpers\Url
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
+ *@link https://github.com/gliverphp/framework
+ *@category Gliver
+ *@package Gliver\Url
  *
  */
 
-use Helpers\ArrayHelper\ArrayHelper;
-use Drivers\Registry\Registry;
+use Gliver\ArrayHelper\ArrayHelper;
+use Gliver\Registry\Registry;
 
 class Url {
 

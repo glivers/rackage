@@ -1,11 +1,11 @@
-<?php namespace Helpers\Path;
+<?php namespace Gliver\Path;
 
 /**
  *This class defines the various paths that will be used in this application
  *
  */
 
-use Drivers\Registry\Registry;
+use Gliver\Registry\Registry;
 
 class Path {
 

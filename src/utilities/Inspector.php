@@ -1,14 +1,14 @@
-<?php namespace Drivers\Utilities;
+<?php namespace Gliver\Utilities;
 
 /**
  *This class checks for presence of filter classes in the method definitinos.
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Drivers
- *@package Drivers\Utilities\Inspector
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\Utilities\Inspector
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
 class Inspector {

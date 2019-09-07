@@ -1,19 +1,19 @@
-<?php namespace Helpers\ArrayHelper;
+<?php namespace Gliver\ArrayHelper;
 
 /**
  *This class handles all array related functionality
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
- *@category Core
- *@package Core\Helpers\ArrayHelper
- *@link https://github.com/gliver-mvc/gliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
+ *@category Gliver
+ *@package Gliver\ArrayHelper
+ *@link https://github.com/gliverphp/gliver
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\ArrayHelper\ArrayHelperClass;
-use Helpers\ArrayHelper\ArrayHelperException;
+use Gliver\ArrayHelper\ArrayHelperClass;
+use Gliver\ArrayHelper\ArrayHelperException;
 
 class ArrayHelper {
 

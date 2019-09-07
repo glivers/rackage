@@ -1,15 +1,15 @@
-<?php namespace Helpers\Exceptions;
+<?php namespace Gliver\Exceptions;
 
 /**
  *This class handles all exceptions thrown by Controller Classes
  *
- * @author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- * @copyright 2015 - 2020 Geoffrey Oliver
- * @category Exceptions
- * @package Drivers\Exceptions\ControllerException
- * @link https://github.com/gliver-mvc/gliver
+ * @author Geoffrey Okongo <geoffrey@gliver.org>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Gliver
+ * @package Gliver\Exceptions\ControllerException
+ * @link https://github.com/gliverphp/gliver
  * @license http://opensource.org/licenses/MIT MIT License
- * @version 1.0.1
+ * @version 2.0.1
  */
 
 use Exceptions\BaseExceptionClass;

@@ -1,19 +1,19 @@
-<?php namespace Drivers\Utilities;
+<?php namespace Gliver\Utilities;
 
 /**
  *This class resolves a Url string to get the controller, method and query parameters
  *
- *@author Geoffrey Oliver <geoffrey.oliver2@gmail.com>
- *@copyright 2015 - 2020 Geoffrey Oliver
+ *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Utilities
  *@package Utilities\UrlParserUtility
- *@link https://github.com/gliver-mvc/gliver
+ *@link https://github.com/gliverphp/framework
  *@license http://opensource.org/licenses/MIT MIT License
- *@version 1.0.1
+ *@version 2.0.1
  */
 
-use Helpers\StringHelper\StringHelper;
-use Helpers\ArrayHelper\ArrayHelper;
+use Gliver\StringHelper\StringHelper;
+use Gliver\ArrayHelper\ArrayHelper;
  
 class UrlParser  {
 
