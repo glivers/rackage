@@ -3,7 +3,7 @@
 /**
  *This trait is implemented in the base class. It give the basic initialization code for a cache service
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Drivers\Cache

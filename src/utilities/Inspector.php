@@ -2,7 +2,7 @@
 
 /**
  *This class checks for presence of filter classes in the method definitinos.
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Utilities\Inspector

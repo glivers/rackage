@@ -3,7 +3,7 @@
 /**
  *This class resolves a Url string to get the controller, method and query parameters
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Utilities
  *@package Utilities\UrlParserUtility

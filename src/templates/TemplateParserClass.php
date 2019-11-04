@@ -2,7 +2,7 @@
 
 /**
  *This class processes templates
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Templates

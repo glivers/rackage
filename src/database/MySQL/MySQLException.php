@@ -3,7 +3,7 @@
 /**
  *This class handles all exceptions thrown in the context of mysql database operations
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Gliver\Database\MySQL

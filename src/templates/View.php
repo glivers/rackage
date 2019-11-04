@@ -3,7 +3,7 @@
 /**
  *This class handles rendering of view files
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
  *@link https://github.com/gliverphp/framework
  *@category Gliver

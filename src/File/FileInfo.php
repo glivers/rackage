@@ -3,7 +3,7 @@
 /**
  *This class provides information about a file
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\File\FileInfo

@@ -5,7 +5,7 @@
  *It inspects the input url and gets the appropriate controller and method to launch based on the 
  *defined or infered routes
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver

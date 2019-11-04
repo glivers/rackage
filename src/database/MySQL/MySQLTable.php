@@ -2,7 +2,7 @@
 
 /**
  *This class parses doc blocks into valid table columns.
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver\Database
  *@package Gliver\Database\MySQL\MySQLTable

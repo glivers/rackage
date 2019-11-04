@@ -2,7 +2,7 @@
 
 /**
  *This trait with magic class provide getters and setters for the base controller class
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Drivers\Controllers

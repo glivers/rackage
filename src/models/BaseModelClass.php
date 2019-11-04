@@ -4,7 +4,7 @@
  *This is the Base Model class that all Model Classes extend. All methods in this class
  *are implemented in a static mannger so no instance of this can be created.
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver\Models\BaseModelClass
