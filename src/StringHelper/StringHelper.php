@@ -5,7 +5,7 @@
  *
  *This class implements Singleton and cannot be subclassed. It sanitizes on our strings before we use them.
  *
- *@author Geoffrey Okongo <geoffrey@gliver.org>
+ *@author Geoffrey Okongo <code@gliver.org>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Gliver
  *@package Gliver

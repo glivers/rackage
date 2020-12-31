@@ -1,17 +1,17 @@
-<?php namespace Gliver\Upload;
+<?php namespace Gliver\Routes;
 
 /**
- *This class handles all exceptions thrown by Upload Class
+ *This class handles all exceptions thrown by Routing Class
  *
  * @author Geoffrey Okongo <code@gliver.org>
  * @copyright 2015 - 2030 Geoffrey Okongo
  * @category Exceptions
- * @package Gliver\Upload\UploadException
+ * @package Gliver\Routes\RouteException
  * @link https://github.com/gliverphp/framework
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.1
  */
 
-use Gliver\Exceptions\HelperException;
+use Exceptions\BaseExceptionClass;
 
-class UploadException extends HelperException {}
+class RouteException extends BaseExceptionClass {}
