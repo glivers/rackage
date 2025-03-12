@@ -1,20 +1,20 @@
-<?php namespace Gliver\Upload;
+<?php namespace Rackage\Upload;
 
 /**
  *This class performs files uploads on the server. *
  *This class implements Singleton and cannot be subclassed. .
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Upload
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Upload
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Path\Path;
-use Gliver\Upload\UploadClass;
+use Rackage\Path\Path;
+use Rackage\Upload\UploadClass;
 
 class Upload {
 

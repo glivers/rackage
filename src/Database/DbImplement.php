@@ -1,19 +1,19 @@
-<?php namespace Gliver\Database;
+<?php namespace Rackage\Database;
 
 /**
  *This trait is implemented in the base class. 
  *It give the basic initialization code for a database service
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Database
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Database
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Database\MySQL\MySQL;
+use Rackage\Database\MySQL\MySQL;
 
 trait DbImplement { 
 

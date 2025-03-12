@@ -1,20 +1,20 @@
-<?php namespace Gliver\Routes;
+<?php namespace Rackage\Routes;
 
 /**
  *This class performs url resolving. 
  *It inspects the input url and gets the appropriate controller and method to launch based on the 
  *defined or infered routes
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\ArrayHelper\ArrayHelper;
+use Rackage\ArrayHelper\ArrayHelper;
 
 class BaseRouteClass {
 

@@ -1,19 +1,19 @@
-<?php namespace Gliver\ArrayHelper;
+<?php namespace Rackage\ArrayHelper;
 
 /**
  *This class handles all array related functionality
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\ArrayHelper
- *@link https://github.com/gliverphp/gliver
+ *@category Rackage
+ *@package Rackage\ArrayHelper
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\ArrayHelper\ArrayHelperClass;
-use Gliver\ArrayHelper\ArrayHelperException;
+use Rackage\ArrayHelper\ArrayHelperClass;
+use Rackage\ArrayHelper\ArrayHelperException;
 
 class ArrayHelper {
 

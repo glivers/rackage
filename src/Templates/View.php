@@ -1,19 +1,19 @@
-<?php namespace Gliver\Templates;
+<?php namespace Rackage\Templates;
 
 /**
  *This class handles rendering of view files
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
  *@link https://github.com/gliverphp/framework
- *@category Gliver
- *@package Gliver\View
+ *@category Rackage
+ *@package Rackage\View
  */
 
-use Gliver\Registry\Registry;
-use Gliver\Path\Path;
-use Gliver\Templates\BaseTemplateClass;
-use Gliver\Templates\TemplateException;
+use Rackage\Registry\Registry;
+use Rackage\Path\Path;
+use Rackage\Templates\BaseTemplateClass;
+use Rackage\Templates\TemplateException;
 
 class View {
 

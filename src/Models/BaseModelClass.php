@@ -1,21 +1,21 @@
-<?php namespace Gliver\Models;
+<?php namespace Rackage\Models;
 
 /**
  *This is the Base Model class that all Model Classes extend. All methods in this class
  *are implemented in a static mannger so no instance of this can be created.
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Models\BaseModelClass
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Models\BaseModelClass
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Registry;
-use Gliver\Database\MySQL\MySQLTable;
-use Gliver\ModelException;
+use Rackage\Registry;
+use Rackage\Database\MySQL\MySQLTable;
+use Rackage\ModelException;
 
 class BaseModelClass {
 

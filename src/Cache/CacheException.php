@@ -3,11 +3,11 @@
 /**
  *This class handles all exceptions throw in the context of caching
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Drivers\Cache
- *@link https://github.com/gliverphp/gliver
+ *@category Rackage
+ *@package Rackage\Drivers\Cache
+ *@link https://github.com/glivers/gliver
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */

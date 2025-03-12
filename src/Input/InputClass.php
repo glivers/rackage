@@ -1,18 +1,18 @@
-<?php namespace Gliver\Input;
+<?php namespace Rackage\Input;
 
 /**
  *This class handles post and get input data
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Input\InputClass
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Input\InputClass
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Exceptions\HelperException;
+use Rackage\Exceptions\HelperException;
 
 class InputClass {
 

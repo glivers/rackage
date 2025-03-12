@@ -1,4 +1,4 @@
-<?php namespace Gliver\Cookie;
+<?php namespace Rackage\Cookie;
 
 class Cookie {
 	
