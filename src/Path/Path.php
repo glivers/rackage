@@ -1,11 +1,11 @@
-<?php namespace Gliver\Path;
+<?php namespace Rackage\Path;
 
 /**
  *This class defines the various paths that will be used in this application
  *
  */
 
-use Gliver\Registry\Registry;
+use Rackage\Registry\Registry;
 
 class Path {
 

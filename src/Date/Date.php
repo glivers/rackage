@@ -1,4 +1,4 @@
-<?php namespace Gliver\Date;
+<?php namespace Rackage\Date;
 
 class Date {
 

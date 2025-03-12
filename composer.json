@@ -1,19 +1,19 @@
 {
-    "name": "gliver/framework",
-    "description": "This is a collection of all the PHP classes that make Gliver a real MVC framework",
+    "name": "glivers/rackage",
+    "description": "This is a collection of all the PHP classes that make Rachie a real MVC framework",
     "type": "package",
     "license": "MIT",
     "authors": [
         {
             "name": "Geoffrey Okongo",
-            "email": "code@gliver.org"
+            "email": "code@rachie.dev"
         }
     ],
     "minimum-stability": "stable",
     "require": {},
     "autoload": {
         "psr-4": { 
-            "Gliver\\": "src" 
+            "Rackage\\": "src" 
         }
     }
 }

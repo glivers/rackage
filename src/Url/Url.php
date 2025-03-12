@@ -1,18 +1,18 @@
-<?php namespace Gliver\Url;
+<?php namespace Rackage\Url;
 
 /**
  *This class resolves urls and returns the appropriate url string required
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
  *@link https://github.com/gliverphp/framework
- *@category Gliver
- *@package Gliver\Url
+ *@category Rackage
+ *@package Rackage\Url
  *
  */
 
-use Gliver\ArrayHelper\ArrayHelper;
-use Gliver\Registry\Registry;
+use Rackage\ArrayHelper\ArrayHelper;
+use Rackage\Registry\Registry;
 
 class Url {
 

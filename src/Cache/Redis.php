@@ -1,2 +1,2 @@
-<?php namespace Gliver\Drivers\Cache;
+<?php namespace Rackage\Drivers\Cache;
 

@@ -1,17 +1,17 @@
-<?php namespace Gliver\ArrayHelper;
+<?php namespace Rackage\ArrayHelper;
 
 /**
  *This class handles all exceptions thrown by Template Class
  *
- * @author Geoffrey Okongo <code@gliver.org>
+ * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
- * @category Gliver
- * @package Gliver\Templates\TemplateException
- * @link https://github.com/gliverphp/gliver
+ * @category Rackage
+ * @package Rackage\Templates\TemplateException
+ * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.1
  */
 
-use Gliver\Exceptions\HelperException;
+use Rackage\Exceptions\HelperException;
 
 class ArrayHelperException extends HelperException {}

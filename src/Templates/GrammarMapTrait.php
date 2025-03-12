@@ -1,17 +1,17 @@
-<?php namespace Gliver\Templates;
+<?php namespace Rackage\Templates;
 
 /**
  *This class defines the template grammar map
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Templates
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Templates
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Templates\View as ViewHelper;
+use Rackage\Templates\View as ViewHelper;
 
 trait GrammarMapTrait {
 

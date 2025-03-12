@@ -1,22 +1,22 @@
-<?php namespace Gliver\Routes;
+<?php namespace Rackage\Routes;
 
 /**
  *This Route class maps a request to the appropriate controller and action.
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Routes\RouteParser
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\Routes\RouteParser
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Registry;
-use Gliver\Utilities\UrlParser;
-use Gliver\Routes\RouteException;
-use Gliver\ArrayHelper\ArrayHelper;
-use Gliver\Input\Input;
+use Rackage\Registry;
+use Rackage\Utilities\UrlParser;
+use Rackage\Routes\RouteException;
+use Rackage\ArrayHelper\ArrayHelper;
+use Rackage\Input\Input;
 
 class RouteParser extends BaseRouteClass {
 

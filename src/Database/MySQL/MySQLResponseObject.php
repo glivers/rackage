@@ -1,13 +1,13 @@
-<?php namespace Gliver\Database\MySQL;
+<?php namespace Rackage\Database\MySQL;
 
 /**
  *This is the response object for all successful MySQL database queries
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver\Database
- *@package Gliver\Database\MySQL\MySQLResponseObject
- *@link https://github.com/gliverphp/framework
+ *@category Rackage\Database
+ *@package Rackage\Database\MySQL\MySQLResponseObject
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */

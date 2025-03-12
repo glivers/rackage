@@ -1,19 +1,19 @@
-<?php namespace Gliver\Utilities;
+<?php namespace Rackage\Utilities;
 
 /**
  *This class resolves a Url string to get the controller, method and query parameters
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Utilities
  *@package Utilities\UrlParserUtility
- *@link https://github.com/gliverphp/framework
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\StringHelper\StringHelper;
-use Gliver\ArrayHelper\ArrayHelper;
+use Rackage\StringHelper\StringHelper;
+use Rackage\ArrayHelper\ArrayHelper;
  
 class UrlParser  {
 

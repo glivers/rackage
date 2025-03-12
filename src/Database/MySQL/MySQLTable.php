@@ -1,21 +1,21 @@
-<?php namespace Gliver\Database\MySQL;
+<?php namespace Rackage\Database\MySQL;
 
 /**
  *This class parses doc blocks into valid table columns.
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver\Database
- *@package Gliver\Database\MySQL\MySQLTable
- *@link https://github.com/gliverphp/framework
+ *@category Rackage\Database
+ *@package Rackage\Database\MySQL\MySQLTable
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Path\Path;
-use Gliver\File\FileInfo;
-use Gliver\File\FileHandler;
-use Gliver\Database\MySQL\MySQLResponseObject;
-use Gliver\Database\MySQL\MySQLException;
+use Rackage\Path\Path;
+use Rackage\File\FileInfo;
+use Rackage\File\FileHandler;
+use Rackage\Database\MySQL\MySQLResponseObject;
+use Rackage\Database\MySQL\MySQLException;
 
 class MySQLTable {
 

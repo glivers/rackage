@@ -1,17 +1,17 @@
-<?php namespace Gliver\Controllers;
+<?php namespace Rackage\Controllers;
 
 /**
  *This trait with magic class provide getters and setters for the base controller class
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\Drivers\Controllers
- *@link https://github.com/gliverphp/gliver
+ *@category Rackage
+ *@package Rackage\Drivers\Controllers
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-use Gliver\Registry\Registry;
+use Rackage\Registry\Registry;
 
 trait  BaseControllerTrait {
 

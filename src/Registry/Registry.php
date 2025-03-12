@@ -1,4 +1,4 @@
-<?php namespace Gliver\Registry;
+<?php namespace Rackage\Registry;
 
 /**
  *This class creates and stores instances of objects
@@ -7,22 +7,22 @@
  *initializes and stores instances of objects, this helps to avoid instantiating multiple instances 
  *of the same object while the same instance would suffice
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo 
- *@category Gliver
- *@package Gliver\Gliver
+ *@category Rackage
+ *@package Rachie\Rackage
  *@link 
  */
-use Gliver\Database\BaseDb;
-use Gliver\Cache\CacheBase;
-use Gliver\Templates\BaseTemplateClass;
+use Rackage\Database\BaseDb;
+use Rackage\Cache\CacheBase;
+use Rackage\Templates\BaseTemplateClass;
 
 class Registry {
 
 	/**
 	*@var float The application start time in seconds
 	*/
-	public static $gliver_app_start;
+	public static $rachie_app_start;
 
 	/**
 	 *

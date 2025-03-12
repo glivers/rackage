@@ -1,13 +1,13 @@
-<?php namespace Gliver\File;
+<?php namespace Rackage\File;
 
 /**
  *This class provides information about a file
  *
- *@author Geoffrey Okongo <code@gliver.org>
+ *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Gliver
- *@package Gliver\File\FileInfo
- *@link https://github.com/gliverphp/framework
+ *@category Rackage
+ *@package Rackage\File\FileInfo
+ *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
