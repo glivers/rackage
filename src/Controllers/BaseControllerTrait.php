@@ -55,7 +55,7 @@ trait  BaseControllerTrait {
 	public function set_gliver_fr_controller_trait_properties()
 	{
 		//set the request_start_time
-		$this->request_start_time = Registry::$gliver_app_start;
+		$this->request_start_time = Registry::$rachie_app_start;
 
 		//set the site title
 		$this->site_title = Registry::getConfig()['title'];
