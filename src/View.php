@@ -1,4 +1,4 @@
-<?php namespace Rackage\Templates;
+<?php namespace Rackage;
 
 /**
  *This class handles rendering of view files
