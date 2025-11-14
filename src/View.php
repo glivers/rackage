@@ -90,7 +90,7 @@ class View {
         //convert aliases array to string
         $class_alias_string = implode('', $class_alias_array);
 
-        return sprintf('<?php %s function request_exec_time(){return microtime(true) - Registry::$gliver_app_start;}?>', $class_alias_string);
+        return sprintf('<?php %s function request_exec_time(){return microtime(true) - Registry::$rachie_app_start;}?>', $class_alias_string);
 
     } 
 
@@ -100,10 +100,25 @@ class View {
      * @param mixed $data The data in any format to inject into the view file
      * @return static class
      */
-    public  static function with($key, $data)
+    // public  static function with($key, $data)
+    // {
+    //     //set the value of the $variables property
+    //     self::$variables[] = array($key => $data);
+
+    //     //return the static class
+    //     return new static;
+
+    // }    
+
+    /**
+     * This method sets the view file variables to be injected in view file.
+     * @param array $data an array with variables to be passed to the view file
+     * @return static class
+     */
+    public  static function with($data)
     {
-        //set the value of the $variables property
-        self::$variables[] = array($key => $data);
+        //set the value of the variables property, if data is provided
+        self::$variables[] = $data;
 
         //return the static class
         return new static;
@@ -114,49 +129,47 @@ class View {
      *This method parses the input variables and loads the specified views
      *
      *@param string $filePath the string that specifies the view file to load
-     *@param array $data an array with variables to be passed to the view file
+     *@param boolean true|false $parse Use template parsing or not
      *@return void This method does not return anything, it directly loads the view file
      *@throws 
      */     
-   public static function  render($fileName, array $data = null) 
+   public static function  render($fileName, $parse = true) 
    {
 
-        //set the value of the variables property, if data is provided
-        if( $data !== null) self::$variables[] = $data;
-
-        //this try block is excecuted to enable throwing and catching of errors as appropriate
         try {
-
-            //loop through the $variables property setting the respective variable values
-            foreach (self::$variables as $variable) 
-            {
-                //extact the variables
+            // Loop through variables
+            foreach (self::$variables as $variable) {
                 foreach($variable as $key => $value){
-
                     $$key = $value;
-
                 }
-
             }
-
-
-            //get the parsed contents of the template file
-            $contents = self::getHeaderContent() . self::getContents($fileName, false);
-
-            //write contents to file
-            $file_write_path  = Registry::getConfig()['root'] . '/bin/tmp/' . md5(Registry::getConfig()['title']);
-
-            file_put_contents($file_write_path, $contents);
-
-            if($load_view = include $file_write_path) unlink($file_write_path);
-
+            
+            // Ensure tmp directory exists
+            $tmpDir = Registry::getConfig()['root'] . '/bin/tmp/';
+            if (!is_dir($tmpDir)) {
+                mkdir($tmpDir, 0755, true);
+            }
+            
+            if (($parse === false) || (Registry::getConfig()['template_engine'] === false)) {
+                // No template engine
+                $filePath = Path::view($fileName);
+                $contents = self::getHeaderContent() . file_get_contents($filePath);
+                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';
+                file_put_contents($file_write_path, $contents);
+                include $file_write_path;
+                unlink($file_write_path);
+            } 
+            else {
+                // With template engine
+                $contents = self::getHeaderContent() . self::getContents($fileName, false);
+                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';  // Changed to uniqid
+                file_put_contents($file_write_path, $contents);
+                include $file_write_path;
+                unlink($file_write_path);  // Always unlink
+            }
         }
-
-        catch(HelperException $HelperExceptionObjectInstance) {
-
-            //display the error message
-            $HelperException->errorShow();
-
+        catch(HelperException $exception) {
+            $exception->errorShow();  // Note: variable name mismatch?
         }
 
     }
@@ -215,7 +228,7 @@ class View {
     *@param array $data The data to send in the form of json object
     *@return json/header
     */
-    public static function renderJson(array $data = null)
+    public static function json(array $data = null)
     {
         //set the json headers
         header('Content-Type: application/json');
