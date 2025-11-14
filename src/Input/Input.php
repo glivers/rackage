@@ -201,10 +201,10 @@ class Input {
 	 *@param string $key The name with which to access post variable
 	 *@return mixed False if key not exists, Value of key of the key exists, Whole Input array if null param supplied
 	 */	
-	public static function get($name = null)
+	public static function get($name = null, $default = false)
 	{
 		//call the implementation method to get the input data
-		return self::$InputClassInstance->get($name);
+		return self::$InputClassInstance->get($name) ?? $default;
 
 	}
 
