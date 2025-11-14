@@ -107,4 +107,14 @@ class Session {
 		return $exists;
 
 	}
+
+	/**
+	 * Regenerate session ID to prevent session fixation attacks
+	 * 
+	 * @param bool $deleteOldSession Delete old session data
+	 * @return bool True on success
+	 */
+	public static function refresh($deleteOld = true) {
+	    return session_regenerate_id($deleteOld);
+	}
 }
