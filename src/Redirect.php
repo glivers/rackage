@@ -79,4 +79,24 @@ class Redirect {
 
 	}
 
+	/**
+     * Redirect back to previous page
+     * 
+     * @return void
+     */
+    public static function back() {
+        $referer = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '/';
+        
+        // Build query string if params exist
+        if (!empty(self::$params)) {
+            $query = http_build_query(self::$params);
+            $referer .= (strpos($referer, '?') === false ? '?' : '&') . $query;
+            self::$params = []; // Reset params
+        }
+        
+        header("Location: $referer");
+        exit;
+    
+    }
+
 }
