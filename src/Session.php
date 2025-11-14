@@ -63,16 +63,9 @@ class Session {
 	 *@param string $key The key with which to search session data
 	 *@return mixed The value stored in session
 	 */
-	public static function  get($key)
-	{
-		//check if this key exists 
-		$exists = (isset($_SESSION[$key])) ? true : false;
+	public static function  get($key, $default = false) {
 
-		//return check status if false
-		if ( ! $exists)  return $exists;
-
-		//return the session data if found
-		else return $_SESSION[$key];
+		return isset($_SESSION[$key]) ? $_SESSION[$key] : $default;
 
 	}
 
@@ -98,13 +91,10 @@ class Session {
 	 *@param string $key
 	 *@return bool true|false Reurns true if key was found or false if null
 	 */
-	public static function has($key)
-	{
-		//check if this key exists 
-		$exists = (isset($_SESSION[$key])) ? true : false;
-
-		//return check status
-		return $exists;
+	public static function has($key){
+		
+		//check and return if this key exists 
+		return (isset($_SESSION[$key])) ? true : false;
 
 	}
 
