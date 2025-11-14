@@ -14,7 +14,7 @@
 
 use Rackage\StringHelper\StringHelper;
 use Rackage\ArrayHelper\ArrayHelper;
- 
+
 class UrlParser  {
 
 	/**

@@ -52,7 +52,7 @@ trait  BaseControllerTrait {
 	*@param null
 	*@return \Object $this instance of the controller for the purposes of chaining
 	*/
-	public function set_gliver_fr_controller_trait_properties()
+	public function set_rachie_fr_controller_trait_properties()
 	{
 		//set the request_start_time
 		$this->request_start_time = Registry::$rachie_app_start;
