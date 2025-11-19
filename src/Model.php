@@ -17,7 +17,7 @@ use Rackage\Registry;
 use Rackage\Database\MySQL\MySQLTable;
 use Rackage\ModelException;
 
-class ModelClass {
+class Model {
 
 	/**
 	 *This is the constructor class. We make this private to avoid creating instances of
