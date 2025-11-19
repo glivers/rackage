@@ -14,7 +14,7 @@
  * @version 2.0.1
  */
 
-use Rackage\Session\Session;
+use Rackage\Session;
 
 class CSRF {
     
