@@ -323,9 +323,9 @@ class Router {
 		$dispatch = new $this->controller;
 
 		// Ensure controller extends base controller
-		if (!$dispatch instanceof \Controllers\Controller) {
+		if (!$dispatch instanceof \Rackage\Controller) {
 			throw new RouteException(
-				"Controller '{$this->controller}' must extend Controllers\\Controller"
+				"Controller '{$this->controller}' must extend Rackage\\Controller"
 			);
 		}
 
