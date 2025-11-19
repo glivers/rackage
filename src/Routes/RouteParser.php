@@ -107,31 +107,35 @@ class RouteParser extends BaseRouteClass {
 	 */
 	public function matchRoute()
 	{
+		if($this->UrlParserObjectInstance->getController() !== null) {
 
-		//check if this route key exists
-		$RouteMatch = (ArrayHelper::KeyExists($this->UrlParserObjectInstance->getController(), $this->definedRoutesArray)->get()) ? true : false;
+			//check if this route key exists
+			$RouteMatch = (ArrayHelper::KeyExists($this->UrlParserObjectInstance->getController(), $this->definedRoutesArray)->get()) ? true : false;
 
-		//a matching route was found, set params and return true
-		if($RouteMatch)
-		{
-			//set the value of the routeName
-			$this->routeName = $this->UrlParserObjectInstance->getController();
+			//a matching route was found, set params and return true
+			if($RouteMatch)
+			{
+				//set the value of the routeName
+				$this->routeName = $this->UrlParserObjectInstance->getController();
 
-			//get metaData for this route
-			$this->routeMetaData = $this->definedRoutesArray[$this->UrlParserObjectInstance->getController()];
+				//get metaData for this route
+				$this->routeMetaData = $this->definedRoutesArray[$this->UrlParserObjectInstance->getController()];
 
-			//return true
-			return true;
+				//return true
+				return true;
+
+			}
+
+			//not matching route was found, return fasle
+			else{
+
+				//return false
+				return false;
+
+			}
 
 		}
-
-		//not matching route was found, return fasle
-		else{
-
-			//return false
-			return false;
-
-		}
+		else return false;
 
 	}
 

@@ -1,4 +1,4 @@
-<?php namespace Drivers\Cache;
+<?php namespace Rackage\Cache;
 
 /**
  *This class handles all exceptions throw in the context of caching
@@ -12,7 +12,7 @@
  *@version 2.0.1
  */
 
-use Helpers\Path;
+use Rackage\Path;
 
 class CacheException extends \Exception {
 

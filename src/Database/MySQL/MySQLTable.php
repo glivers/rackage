@@ -11,7 +11,7 @@
  *@version 2.0.1
  */
 
-use Rackage\Path\Path;
+use Rackage\Path;
 use Rackage\File\FileInfo;
 use Rackage\File\FileHandler;
 use Rackage\Database\MySQL\MySQLResponseObject;

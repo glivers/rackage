@@ -13,7 +13,7 @@
  *@version 2.0.1
  */
 
-use Rackage\Path\Path;
+use Rackage\Path;
 use Rackage\Upload\UploadClass;
 
 class Upload {

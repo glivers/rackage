@@ -12,7 +12,7 @@
  */
 
 use Rackage\ArrayHelper\ArrayHelper;
-use Rackage\Registry\Registry;
+use Rackage\Registry;
 
 class Url {
 
@@ -48,13 +48,13 @@ class Url {
 		//get the server name from global $_SERVER[] array()
 		$base  = $_SERVER['SERVER_NAME']; 
 
-		$url = Registry::getUrl();
+		$url = Registry::url();
 
 		//check if there is a uri string
 		if ( ! empty($url) ) 
 		{
 			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::getUrl()));
+			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
 
 		}
 		//there is no query string, 
@@ -86,13 +86,13 @@ class Url {
 		//get the server name from global $_SERVER[] array()
 		$base  = $_SERVER['SERVER_NAME']; 
 
-		$url = Registry::getUrl();
+		$url = Registry::url();
 
 		//check if there is a uri string
 		if ( ! empty($url) ) 
 		{
 			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::getUrl()));
+			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
 
 		}
 		//there is no query string, 
@@ -127,26 +127,26 @@ class Url {
 
 		elseif(is_array($linkParams)){
 
-			$link_params = join(Registry::getConfig()['url_component_separator'], $linkParams);
+			$link_params = join(Registry::settings()['url_component_separator'], $linkParams);
 		
 		}
 
 		else{
 
 			$params = func_get_args();
-			$link_params = join(Registry::getConfig()['url_component_separator'], $params);
+			$link_params = join(Registry::settings()['url_component_separator'], $params);
 		}
 
 		//get the server name from global $_SERVER[] array()
 		$base  = $_SERVER['SERVER_NAME']; 
 
-		$url = Registry::getUrl();
+		$url = Registry::url();
 
 		//check if there is a uri string
 		if ( ! empty($url) ) 
 		{
 			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::getUrl()));
+			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
 
 		}
 		//there is no query string, 

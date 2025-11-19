@@ -11,7 +11,7 @@
  *@version 2.0.1
  */
 
-use Rackage\Registry\Registry;
+use Rackage\Registry;
 
 trait  ControllerTrait {
 
@@ -58,7 +58,7 @@ trait  ControllerTrait {
 		$this->request_start_time = Registry::$rachie_app_start;
 
 		//set the site title
-		$this->site_title = Registry::getConfig()['title'];
+		$this->site_title = Registry::settings()['title'];
 
 		//return this object instance
 		return $this;
