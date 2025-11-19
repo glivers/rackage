@@ -10,8 +10,8 @@
  *@package Rackage\View
  */
 
-use Rackage\Registry\Registry;
-use Rackage\Path\Path;
+use Rackage\Registry;
+use Rackage\Path;
 use Rackage\Templates\BaseTemplateClass;
 use Rackage\Templates\TemplateException;
 
@@ -28,7 +28,7 @@ class View {
     private static $variables = array();
      
     /**
-     *This is the constructor class. We make this private to avoid creating instances of
+     *This is the constructor method. We make this private to avoid creating instances of
      *this object
      *
      *@param null
@@ -66,7 +66,7 @@ class View {
     }
 
     /**
-    *This method gets the header content for importing classes
+    *This method gets the header content for importing classes aliases in the settings.php
     *
     *@param null
     *@return string The content of the header section
@@ -74,7 +74,7 @@ class View {
     private static function getHeaderContent()
     {
         //get the content of the aliases array
-        $class_aliases_namespaces = Registry::getConfig()['aliases'];
+        $class_aliases_namespaces = Registry::settings()['aliases'];
 
         //define array to contain numeric class_alias_namesplace
         $class_alias_array = array();
@@ -83,14 +83,17 @@ class View {
         foreach($class_aliases_namespaces as $namespace => $alias)
         {
             //add elements to the class_alias_array array
-            $class_alias_array[] = "use $namespace as $alias;";
+            //$class_alias_array[] = "use $namespace as $alias;";
+            $class_alias_array[] = "use $namespace;";
 
         }
 
         //convert aliases array to string
-        $class_alias_string = implode('', $class_alias_array);
+        //$class_alias_string = implode('', $class_alias_array);
+        $class_alias_string = "\n" . join("\n", $class_alias_array);
 
-        return sprintf('<?php %s function request_exec_time(){return microtime(true) - Registry::$rachie_app_start;}?>', $class_alias_string);
+        /**return sprintf('<?php %s ?>', $class_alias_string) . "\n"; */
+        return '<?php ' . $class_alias_string . "\n?>\n";
 
     } 
 
@@ -145,12 +148,12 @@ class View {
             }
             
             // Ensure tmp directory exists
-            $tmpDir = Registry::getConfig()['root'] . '/bin/tmp/';
+            $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
             if (!is_dir($tmpDir)) {
                 mkdir($tmpDir, 0755, true);
             }
             
-            if (($parse === false) || (Registry::getConfig()['template_engine'] === false)) {
+            if (($parse === false) || (Registry::settings()['template_engine'] === false)) {
                 // No template engine
                 $filePath = Path::view($fileName);
                 $contents = self::getHeaderContent() . file_get_contents($filePath);
@@ -162,7 +165,7 @@ class View {
             else {
                 // With template engine
                 $contents = self::getHeaderContent() . self::getContents($fileName, false);
-                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';  // Changed to uniqid
+                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';  
                 file_put_contents($file_write_path, $contents);
                 include $file_write_path;
                 unlink($file_write_path);  // Always unlink
@@ -175,7 +178,7 @@ class View {
     }
 
     /**
-    *This method returns the parsed contents of a template view code in valid html.
+    *This method returns the parsed contents of a template view code in valid php.
     *@param string The filename whose contents to parse
     *@return string The string contents of the file
     */
