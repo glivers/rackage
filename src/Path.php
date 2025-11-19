@@ -5,7 +5,7 @@
  *
  */
 
-use Rackage\Registry\Registry;
+use Rackage\Registry;
 
 class Path {
 
@@ -36,7 +36,7 @@ class Path {
 		//get the global configuration array
 		global $config;
 
-		return Registry::getConfig()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR;
+		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR;
 
 	}
 	
@@ -60,7 +60,7 @@ class Path {
 	public static function sys()
 	{
 		
-		return Registry::getConfig()['root'] . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR;
+		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR;
 
 	}
 
@@ -71,7 +71,7 @@ class Path {
 	public static function tmp()
 	{
 
-		return Registry::getConfig()['root'] . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR;
+		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR;
 
 	}
 
@@ -88,7 +88,7 @@ class Path {
 
         if(count($array) == 1) $array = explode('.',$fileName);
 
-		return Registry::getConfig()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR . 'views' . DIRECTORY_SEPARATOR . join(DIRECTORY_SEPARATOR, $array) . '.php';
+		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR . 'views' . DIRECTORY_SEPARATOR . join(DIRECTORY_SEPARATOR, $array) . '.php';
 
 	}
 	
