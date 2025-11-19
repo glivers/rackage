@@ -12,7 +12,7 @@
  *@version 2.0.1
  */
 
-use Rackage\StringHelper\StringHelper;
+use Rackage\Str;
 use Rackage\ArrayHelper\ArrayHelper;
 
 class UrlParser  {
@@ -54,14 +54,14 @@ class UrlParser  {
 	 *@param char $urlSeparator The url component separator character
 	 *@return Object \UrlParser
 	 */
-	public function __construct($url, $urlSeparator)
+	public function __construct($url, $separator)
 	{
 		//assign the input string value to the $urlString property
-		$this->urlString = StringHelper::removeTags($url);
-		$this->$urlSeparator = $urlSeparator;
+		$this->urlString = Str::removeTags($url);
+		$this->urlSeparator = $separator;
 
 		//call the helper class to split the url string to array components and assign value to $urlComponentsArray property
-		$this->urlComponentsArray = ArrayHelper::parts($this->$urlSeparator, $this->urlString)->clean()->trim()->get();
+		$this->urlComponentsArray = ArrayHelper::parts($this->urlSeparator, $this->urlString)->clean()->trim()->get();
 
 		//return this object instance
 		return $this;
