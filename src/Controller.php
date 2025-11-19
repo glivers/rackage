@@ -13,7 +13,7 @@
 
 use Rackage\Registry;
 
-trait  ControllerTrait {
+class  Controller {
 
 	/**
 	*@var float The request start time
