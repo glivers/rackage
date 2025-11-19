@@ -12,7 +12,7 @@
  *@version 2.0.1
  */
 
-use Rackage\Url\Url;
+use Rackage\Url;
 
 class Redirect {
 
