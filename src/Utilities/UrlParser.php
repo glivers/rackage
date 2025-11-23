@@ -13,7 +13,7 @@
  */
 
 use Rackage\Str;
-use Rackage\ArrayHelper\ArrayHelper;
+use Rackage\Arr;
 
 class UrlParser  {
 
@@ -61,7 +61,7 @@ class UrlParser  {
 		$this->urlSeparator = $separator;
 
 		//call the helper class to split the url string to array components and assign value to $urlComponentsArray property
-		$this->urlComponentsArray = ArrayHelper::parts($this->urlSeparator, $this->urlString)->clean()->trim()->get();
+		$this->urlComponentsArray = Arr::parts($this->urlSeparator, $this->urlString)->clean()->trim()->get();
 
 		//return this object instance
 		return $this;
@@ -170,7 +170,7 @@ class UrlParser  {
 	public function setParameters($value = null, $appendParameter = true){
 			
 		//check if the $urlComponentsArray has more than two element
-		$this->parameters = (count($this->urlComponentsArray) > 2) ? ArrayHelper::slice($this->urlComponentsArray, 2)->get() : array();
+		$this->parameters = (count($this->urlComponentsArray) > 2) ? Arr::slice($this->urlComponentsArray, 2)->get() : array();
 
 		//check if there is an additonal parameter to add to parameters array
 		if($value !== null){
