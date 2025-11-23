@@ -1,244 +1,354 @@
 <?php namespace Rackage;
 
 /**
- *This class handles rendering of view files
+ * View Handler
  *
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
- *@link https://github.com/gliverphp/framework
- *@category Rackage
- *@package Rackage\View
+ * Handles rendering of view files with optional template compilation.
+ * Provides methods for passing data to views, rendering with or without
+ * template engine, and outputting JSON responses.
+ *
+ * Static Design:
+ *   All methods are static - no instance creation required.
+ *   Variables are stored in static properties and extracted into view scope.
+ *
+ * Template Engine:
+ *   When enabled (settings.php → template_engine: true), views are compiled:
+ *   - Directives (@if, @foreach, @extends, etc.) are processed
+ *   - Echo tags ({{ }}, {{{ }}}) are compiled
+ *   - View helpers are auto-imported
+ *
+ * Usage Patterns:
+ *
+ *   // Simple rendering with data
+ *   View::render('blog/show', ['post' => $post]);
+ *
+ *   // With HTTP status code
+ *   View::render('maintenance', [], 503);
+ *
+ *   // Chaining multiple data sources
+ *   View::with(['user' => $user])
+ *       ->with(['posts' => $posts])
+ *       ->render('dashboard');
+ *
+ *   // Raw rendering (no template compilation)
+ *   View::renderRaw('legacy.php', ['data' => $data]);
+ *
+ *   // Error pages
+ *   View::error(404);
+ *   View::error(500, ['message' => 'Database error']);
+ *
+ *   // Get compiled template content without rendering
+ *   $compiled = View::get('emails/welcome');
+ *
+ *   // JSON response
+ *   View::json(['status' => 'success']);
+ *   View::json(['error' => 'Not found'], 404);
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\View
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.1
  */
 
 use Rackage\Registry;
 use Rackage\Path;
-use Rackage\Templates\BaseTemplateClass;
+use Rackage\Templates\Template;
 use Rackage\Templates\TemplateException;
 
 class View {
 
     /**
-    *@var \Object The template parser class instance
-    */
-    private static $BaseTemplateObject = null;
+     * Template parser singleton instance
+     * @var Template|null
+     */
+    private static $templateEngine = null;
 
     /**
-    *@var array The variables to be injected into the view files
-    */
+     * Variables to inject into view files
+     * Stored as single merged array (not nested arrays)
+     * @var array
+     */
     private static $variables = array();
-     
+
     /**
-     *This is the constructor method. We make this private to avoid creating instances of
-     *this object
-     *
-     *@param null
-     *@return void
+     * Private constructor to prevent instantiation
+     * @return void
      */
     private function __construct() {}
 
     /**
-     *This method stops creation of a copy of this object by making it private
-     *
-     *@param null
-     *@return void
-     *
+     * Prevent cloning
+     * @return void
      */
-    private function __clone(){}
+    private function __clone() {}
 
     /**
-    *This method returns the template parser object
-    *
-    *@param null
-    *@return 
-    */
-    public static function getBaseTemplateObject()
+     * Get template parser singleton instance
+     *
+     * Creates Template instance on first call,
+     * returns cached instance on subsequent calls.
+     *
+     * @return Template Template parser instance
+     */
+    public static function getTemplateEngine()
     {
-        //check if the BaseTemplateClass has been defined, if not create instance and return
-        if( is_null(self::$BaseTemplateObject))
-        {
-            self::$BaseTemplateObject = new BaseTemplateClass();
-
-            return self::$BaseTemplateObject;
+        if (is_null(self::$templateEngine)) {
+            self::$templateEngine = new Template();
         }
 
-        else return self::$BaseTemplateObject;
-
+        return self::$templateEngine;
     }
 
     /**
-    *This method gets the header content for importing classes aliases in the settings.php
-    *
-    *@param null
-    *@return string The content of the header section
-    */
+     * Generate view helper imports header
+     *
+     * Creates PHP 'use' statements for all classes listed in the 'view_helpers'
+     * configuration setting. This allows helper classes to be used in views without
+     * fully qualifying their namespaces.
+     *
+     * Example output:
+     *   <?php
+     *   use Rackage\Url;
+     *   use Rackage\HTML;
+     *   ?>
+     *
+     * @return string PHP opening tag with use statements
+     */
     private static function getHeaderContent()
     {
-        //get the content of the aliases array
-        $class_aliases_namespaces = Registry::settings()['aliases'];
+        $view_helpers = Registry::settings()['view_helpers'];
 
-        //define array to contain numeric class_alias_namesplace
-        $class_alias_array = array();
-
-        //convert associative array to indexed array
-        foreach($class_aliases_namespaces as $namespace => $alias)
-        {
-            //add elements to the class_alias_array array
-            //$class_alias_array[] = "use $namespace as $alias;";
-            $class_alias_array[] = "use $namespace;";
-
+        $use_statements = array();
+        foreach ($view_helpers as $namespace) {
+            $use_statements[] = "use $namespace;";
         }
 
-        //convert aliases array to string
-        //$class_alias_string = implode('', $class_alias_array);
-        $class_alias_string = "\n" . join("\n", $class_alias_array);
+        $use_string = "\n" . join("\n", $use_statements);
 
-        /**return sprintf('<?php %s ?>', $class_alias_string) . "\n"; */
-        return '<?php ' . $class_alias_string . "\n?>\n";
-
-    } 
-
-    /**
-     * This method sets the view file variables to be injected in view file.
-     * @param string $key The key with which to store the data
-     * @param mixed $data The data in any format to inject into the view file
-     * @return static class
-     */
-    // public  static function with($key, $data)
-    // {
-    //     //set the value of the $variables property
-    //     self::$variables[] = array($key => $data);
-
-    //     //return the static class
-    //     return new static;
-
-    // }    
-
-    /**
-     * This method sets the view file variables to be injected in view file.
-     * @param array $data an array with variables to be passed to the view file
-     * @return static class
-     */
-    public  static function with($data)
-    {
-        //set the value of the variables property, if data is provided
-        self::$variables[] = $data;
-
-        //return the static class
-        return new static;
-
+        return '<?php ' . $use_string . "\n?>\n";
     }
- 
-    /**
-     *This method parses the input variables and loads the specified views
-     *
-     *@param string $filePath the string that specifies the view file to load
-     *@param boolean true|false $parse Use template parsing or not
-     *@return void This method does not return anything, it directly loads the view file
-     *@throws 
-     */     
-   public static function  render($fileName, $parse = true) 
-   {
 
+    /**
+     * Set view variables to pass to template
+     *
+     * Accepts an associative array of variables to make available in the view.
+     * Can be called multiple times - data is merged together.
+     *
+     * Examples:
+     *   View::with(['user' => $user])->render('profile');
+     *
+     *   View::with(['title' => 'Dashboard'])
+     *       ->with(['posts' => $posts])
+     *       ->render('admin/dashboard');
+     *
+     * @param array $data Associative array of variables
+     * @return View Returns new instance for method chaining
+     */
+    public static function with(array $data)
+    {
+        // Merge data into single array (not nested)
+        self::$variables = array_merge(self::$variables, $data);
+
+        return new static;
+    }
+
+    /**
+     * Render view file with template compilation
+     *
+     * Renders a view file with template engine enabled (unless disabled globally).
+     * Variables are extracted into local scope and the view is included.
+     *
+     * Examples:
+     *   View::render('home');
+     *   View::render('blog/show', ['post' => $post]);
+     *   View::render('maintenance', [], 503);
+     *   View::with(['user' => $user])->render('dashboard');
+     *
+     * @param string $fileName View file path
+     * @param array $data Optional associative array of variables
+     * @param int $status HTTP status code (default 200)
+     * @return void Outputs rendered view directly
+     */
+    public static function render($fileName, array $data = [], $status = 200)
+    {
+        self::renderView($fileName, $data, $status, true);
+    }
+
+    /**
+     * Render view file without template compilation
+     *
+     * Renders a view file as raw PHP without template engine processing.
+     * Useful for legacy views, debugging, or when template syntax causes issues.
+     *
+     * Examples:
+     *   View::renderRaw('legacy.old');
+     *   View::renderRaw('debug.output', ['data' => $debugData]);
+     *   View::renderRaw('plain', [], 404);
+     *
+     * @param string $fileName View file path
+     * @param array $data Optional associative array of variables
+     * @param int $status HTTP status code (default 200)
+     * @return void Outputs rendered view directly
+     */
+    public static function renderRaw($fileName, array $data = [], $status = 200)
+    {
+        self::renderView($fileName, $data, $status, false);
+    }
+
+    /**
+     * Render error page with HTTP status code
+     *
+     * Renders the error page configured in settings.php → error_pages.
+     * Sets proper HTTP status code. Falls back to generic message if
+     * no error view is configured.
+     *
+     * Examples:
+     *   View::error(404);
+     *   View::error(500, ['message' => 'Database connection failed']);
+     *   View::error(403, ['reason' => 'Insufficient permissions']);
+     *
+     * @param int $code HTTP status code
+     * @param array $data Optional data to pass to error view
+     * @return void Outputs error page directly
+     */
+    public static function error($code, array $data = [])
+    {
+        http_response_code($code);
+
+        $errorPages = Registry::settings()['error_pages'] ?? [];
+        $errorView = $errorPages[$code] ?? null;
+
+        if ($errorView) {
+            self::render($errorView, $data);
+        } else {
+            echo "<h1>Error $code</h1>";
+        }
+    }
+
+    /**
+     * Internal render implementation
+     *
+     * Handles the actual rendering logic for both render() and renderRaw().
+     * Extracts variables, compiles template (if enabled), writes to temp file,
+     * includes it, then cleans up.
+     *
+     * @param string $fileName View file path
+     * @param array $data Variables to pass to view
+     * @param int $status HTTP status code
+     * @param bool $parse Whether to use template compilation
+     * @return void
+     */
+    private static function renderView($fileName, array $data, $status, $parse)
+    {
         try {
-            // Loop through variables
-            foreach (self::$variables as $variable) {
-                foreach($variable as $key => $value){
-                    $$key = $value;
-                }
+            // Set HTTP status code
+            if ($status !== 200) {
+                http_response_code($status);
             }
-            
+
+            // Merge passed data with existing variables
+            $allVariables = array_merge(self::$variables, $data);
+
+            // Extract variables into local scope
+            foreach ($allVariables as $key => $value) {
+                $$key = $value;
+            }
+
             // Ensure tmp directory exists
             $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
             if (!is_dir($tmpDir)) {
                 mkdir($tmpDir, 0755, true);
             }
-            
-            if (($parse === false) || (Registry::settings()['template_engine'] === false)) {
-                // No template engine
+
+            // Determine whether to parse template
+            $shouldParse = $parse && (Registry::settings()['template_engine'] !== false);
+
+            // Get view contents (compiled or raw)
+            if ($shouldParse) {
+                $contents = self::getHeaderContent() . self::getContents($fileName, false);
+            } else {
                 $filePath = Path::view($fileName);
                 $contents = self::getHeaderContent() . file_get_contents($filePath);
-                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';
-                file_put_contents($file_write_path, $contents);
-                include $file_write_path;
-                unlink($file_write_path);
-            } 
-            else {
-                // With template engine
-                $contents = self::getHeaderContent() . self::getContents($fileName, false);
-                $file_write_path = $tmpDir . uniqid('view_', true) . '.php';  
-                file_put_contents($file_write_path, $contents);
-                include $file_write_path;
-                unlink($file_write_path);  // Always unlink
             }
-        }
-        catch(HelperException $exception) {
-            $exception->errorShow();  // Note: variable name mismatch?
-        }
 
+            // Write to temp file, include, and clean up
+            $file_write_path = $tmpDir . uniqid('view_', true) . '.php';
+            file_put_contents($file_write_path, $contents);
+            include $file_write_path;
+            unlink($file_write_path);
+
+            // Clear variables after rendering
+            self::$variables = array();
+        }
+        catch (TemplateException $exception) {
+            throw $exception;
+        }
     }
 
     /**
-    *This method returns the parsed contents of a template view code in valid php.
-    *@param string The filename whose contents to parse
-    *@return string The string contents of the file
-    */
+     * Get compiled template contents without rendering
+     *
+     * Returns the compiled PHP code of a template file without executing it.
+     * Useful for debugging template compilation or generating email content.
+     *
+     * Example:
+     *   $emailHtml = View::get('emails/welcome');
+     *
+     * @param string $fileName View file path
+     * @return string Compiled PHP code
+     */
     public static function get($fileName)
     {
-        try{
-
-            //get the parsed contents of the template file
-            $contents = self::getContents($fileName, false);
-
-            //return the contents
-            return $contents;
-
+        try {
+            return self::getContents($fileName, false);
         }
-
-        catch(HelperException $HelperExceptionObjectInstance) {
-
-            //display the error message
-            $HelperException->errorShow();
-
+        catch (TemplateException $exception) {
+            throw $exception;
         }
-
     }
 
     /**
-     *This method converts the code into valid php code
+     * Compile template file to PHP code
      *
-     *@param string $file The name of the view whose content is to be parsed
-     *@param boolean true|false True if this is an embeded view into another view file
-     *@return string $parsedContent The parsed content of the template file
+     * Processes a template file through the template engine, converting
+     * directives and echo tags into valid PHP code.
+     *
+     * @param string $fileName View file name
+     * @param bool $embedded Whether this is embedded in another view
+     * @return string Compiled PHP code
      */
-    public static function getContents($fileName, $embeded)
+    public static function getContents($fileName, $embedded)
     {
-        //compose the file full path
-        $filePath = Path::view($fileName); 
+        $filePath = Path::view($fileName);
+        $template = self::getTemplateEngine();
+        $contents = $template->compiled($filePath, $embedded, $fileName);
 
-        //get an instance of the view template class
-        $template = self::getBaseTemplateObject();
-        
-        //get the compiled file contents
-        $contents = $template->compiled($filePath, $embeded, $fileName);
-
-        //return the compiled template file contents
         return $contents;
-
     }
 
     /**
-    *This method returns result object as json object
-    *@param array $data The data to send in the form of json object
-    *@return json/header
-    */
-    public static function json(array $data = null)
+     * Output JSON response
+     *
+     * Sets JSON content-type header and outputs data as JSON.
+     * Optionally sets HTTP status code.
+     *
+     * Examples:
+     *   View::json(['status' => 'success']);
+     *   View::json(['error' => 'Not found'], 404);
+     *   View::json(['data' => $results], 201);
+     *
+     * @param array|null $data Data to encode as JSON
+     * @param int $status HTTP status code (default 200)
+     * @return void Outputs JSON directly
+     */
+    public static function json(array $data = null, $status = 200)
     {
-        //set the json headers
+        http_response_code($status);
         header('Content-Type: application/json');
-
-        //echo out the array/object in json format
         echo json_encode($data);
-
     }
 
 }
