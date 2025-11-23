@@ -1,323 +1,490 @@
 <?php namespace Rackage\Routes;
 
 /**
- *This Route class maps a request to the appropriate controller and action.
+ * Route Parser
  *
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Rackage
- *@package Rackage\Routes\RouteParser
- *@link https://github.com/glivers/rackage
- *@license http://opensource.org/licenses/MIT MIT License
- *@version 2.0.1
+ * Parses route definitions and maps URLs to controllers/actions.
+ * This class handles the complex logic of matching incoming URLs against
+ * defined routes and extracting controller, method, and parameter information.
+ *
+ * Responsibilities:
+ *   - Match URL against defined routes
+ *   - Parse route metadata (format: "Controller@method/param1/param2")
+ *   - Extract controller and method names from routes
+ *   - Map URL segments to named parameters
+ *   - Inject parameters into Input class for global access
+ *
+ * Route Format:
+ *   Routes are defined as: 'routeName' => 'Controller@method/param1/param2'
+ *   - routeName: The URL path to match (e.g., 'user', 'api/posts')
+ *   - Controller: The controller class to dispatch to
+ *   - method: The controller method to call
+ *   - param1/param2: Named parameters extracted from URL
+ *
+ * Example:
+ *   Route: 'user' => 'User@show/id/action'
+ *   URL: /user/123/edit
+ *   Result: UserController->show($id='123', $action='edit')
+ *
+ * Architecture:
+ *   This class works with UrlParser which handles initial URL parsing.
+ *   RouteParser adds the routing layer on top, mapping friendly route names
+ *   to actual controllers and extracting named parameters.
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Routes
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.1
  */
 
-use Rackage\Registry;
 use Rackage\Utilities\UrlParser;
 use Rackage\Routes\RouteException;
-use Rackage\ArrayHelper\ArrayHelper;
-use Rackage\Input\Input;
+use Rackage\Arr;
+use Rackage\Input;
 
-class RouteParser extends BaseRouteClass {
+class RouteParser {
 
 	/**
-	 *@var string $url The input url string to be parsed for controllers, methods and parameters
+	 * Route pattern delimiter (separates controller from method)
+	 * @var string
 	 */
-	private $urlString;
+	protected $pattern = '@';
 
 	/**
-	 *@var array $routes The array of all defined routes
+	 * URL parameter separator (separates method from parameters)
+	 * @var string
 	 */
-	protected $definedRoutesArray = array();
+	protected $separator = '/';
 
 	/**
-	*@var Object \UrlParser $UrlParserObjectInstance containing evaluated params
-	*/
-	protected $UrlParserObjectInstance;
+	 * Route metadata string (e.g., "User@show/id/action")
+	 * @var string
+	 */
+	protected $routeData;
 
 	/**
-	 *@var array $keys An array of keys to map request params
+	 * Method metadata string (e.g., "show/id/action")
+	 * @var string
+	 */
+	protected $methodData;
+
+	/**
+	 * Parsed method metadata array (e.g., ['show', 'id', 'action'])
+	 * Contains method name and parameter names from route definition
+	 * @var array
+	 */
+	protected $methodArray = array();
+
+	/**
+	 * Resolved controller name
+	 * @var string
+	 */
+	protected $controller = null;
+
+	/**
+	 * Resolved method name
+	 * @var string
+	 */
+	protected $method = null;
+
+	/**
+	 * URL parameters (can be numeric or associative array)
+	 * @var array
+	 */
+	protected $parameters = array();
+
+	/**
+	 * Current URL string being parsed
+	 * @var string
+	 */
+	private $url;
+
+	/**
+	 * Defined routes from routes.php
+	 * @var array
+	 */
+	protected $routes = array();
+
+	/**
+	 * URL parser instance
+	 * @var UrlParser
+	 */
+	protected $urlParser;
+
+	/**
+	 * Matched route name
+	 * @var string
+	 */
+	protected $route;
+
+	/**
+	 * Pattern match flag - true if route matched via wildcard pattern
+	 * @var bool
+	 */
+	protected $isPatternMatch = false;
+
+	/**
+	 * Wildcard value captured from pattern route (everything after prefix/)
+	 * @var string|null
+	 */
+	protected $wildcardValue = null;
+
+	/**
+	 * Constructor - Initialize route parser with dependencies
 	 *
+	 * @param string $url The URL request string to parse
+	 * @param array $routes Defined routes array
+	 * @param UrlParser $urlParser URL parser instance
 	 */
-	protected $requestParamKeys = array();
-
-	/**
-	 *@var string $name The route name  to search
-	 */
-	protected $routeName;
-
-	/**
-	*This method gets the default parameters for this instance of the RouteParser
-	*
-	*@param string $urlString The Url request string to parser
-	*@param array $definedRoutesArray The defined routes in an array
-	*@param Object \UrlParser The instance of the UrlParser class
-	*@return Object \RouteParser
-	*/
-	public function __construct($urlString, array $definedRoutesArray, UrlParser $UrlParserObjectInstance){
-
-		//set the value of the $urlString 
-		$this->urlString = $urlString;
-
-		//set the value of the routes property
-		$this->definedRoutesArray = $definedRoutesArray;
-
-		//set the value of the UrlParserObjectInstance
-		$this->UrlParserObjectInstance = $UrlParserObjectInstance;
-
-		//return this object instance
-		return $this;
-
-	}
-
-	/**
-	 *This method populates the $routes array with all the defined routes
-	 *
-	 *@param array $definedRoutes Array of all the defined routes
-	 *@return Object \RouteParser
-	 */
-	private function setRoutes(array $definedRoutes)
+	public function __construct($url, array $routes, UrlParser $urlParser)
 	{
-		//assign the value of the input $definedRoutes to the $routes property
-		$this->routes = $definedRoutes;
-
-		//return this obeject instance
-		return $this;
-
+		$this->url = $url;
+		$this->routes = $routes;
+		$this->urlParser = $urlParser;
 	}
 
-	/**
-	 *This method returns the contents of the routes array
-	 *
-	 *@param null
-	 *@return array All defined routes in array
-	 */
-	private function getRoutes()
-	{
-		//get and return the routes array
-		return $this->routes;
-
-	}
+	// ===========================================================================
+	// ROUTE MATCHING
+	// ===========================================================================
 
 	/**
-	 *This methods launches the routing functionality of this class
+	 * Check if URL matches a defined route
 	 *
-	 *@param null
+	 * Attempts to match the first segment of the URL against defined routes.
+	 * If a match is found, stores the route name and metadata for later processing.
 	 *
+	 * Process:
+	 * 1. Check if URL has a controller segment
+	 * 2. Look up controller segment in routes array
+	 * 3. If found, store route name and metadata
+	 *
+	 * Example:
+	 *   URL: /user/123/edit
+	 *   Routes: ['user' => 'User@show/id/action', 'api' => 'Api@index']
+	 *   Result: Matches 'user', stores route name and metadata
+	 *
+	 * @return bool True if route matched, false otherwise
 	 */
 	public function matchRoute()
 	{
-		if($this->UrlParserObjectInstance->getController() !== null) {
-
-			//check if this route key exists
-			$RouteMatch = (ArrayHelper::KeyExists($this->UrlParserObjectInstance->getController(), $this->definedRoutesArray)->get()) ? true : false;
-
-			//a matching route was found, set params and return true
-			if($RouteMatch)
-			{
-				//set the value of the routeName
-				$this->routeName = $this->UrlParserObjectInstance->getController();
-
-				//get metaData for this route
-				$this->routeMetaData = $this->definedRoutesArray[$this->UrlParserObjectInstance->getController()];
-
-				//return true
-				return true;
-
-			}
-
-			//not matching route was found, return fasle
-			else{
-
-				//return false
-				return false;
-
-			}
-
+		// URL must have at least a controller segment
+		if ($this->urlParser->getController() === null) {
+			return false;
 		}
-		else return false;
 
+		// Check if first URL segment matches a defined route name
+		$controllerSegment = $this->urlParser->getController();
+		$routeMatch = Arr::exists($controllerSegment, $this->routes);
+
+		if ($routeMatch) {
+			// Store matched route for later reference
+			$this->route = $controllerSegment;
+
+			// Store route metadata (e.g., "User@show/id/action")
+			$this->routeData = $this->routes[$controllerSegment];
+
+			return true;
+		}
+
+		// No exact match - try pattern matching (wildcard routes)
+		return $this->matchPatternRoute();
 	}
 
 	/**
-	*This method sets the controller value for this url instance
-	*
-	*@param string $controllerToLookUp The controller to try and map
-	*@return Object \RouteParser
-	*/
-	public function setController(){
-		
-		//explode the metaData into controller and method
-		$routeMetaDataArray = ArrayHelper::parts($this->pattern, $this->routeMetaData)->clean()->trim()->get();
-
-		//check if  a controller is defined for this route
-		try{
-
-			if ( ! (int)ArrayHelper::KeyExists(0, $routeMetaDataArray)->get() || empty($routeMetaDataArray[0])) {
-
-				throw new RouteException(get_class(new RouteException) ." : There is no controller associated with this route! -> " . $this->routeName);
-				
-			}
-
-			//set the controller for this route
-			$this->controller = $routeMetaDataArray[0];
-
-			//set the method meta data
-			$this->methodMetaData = (count($routeMetaDataArray) > 1) ? $routeMetaDataArray[1] : null;
-
-			//return this object instance
-			return $this;
-
-		}
-		catch(RouteException $RouteExceptionObjectInstance){
-
-			//display the error message
-			$RouteExceptionObjectInstance->errorShow();
-
-		}
-
-	}
-
-
-	/**
-	 *This method returns the controller name
+	 * Check if URL matches a pattern route (wildcard matching)
 	 *
-	 *@param null
-	 *@return string Controller name
+	 * Checks routes ending with /* for wildcard pattern matching.
+	 * Wildcard captures everything after the prefix and passes it as a parameter.
+	 *
+	 * Process:
+	 * 1. Loop through all routes
+	 * 2. Find routes ending with /*
+	 * 3. Extract prefix (part before /*)
+	 * 4. Check if URL starts with prefix/
+	 * 5. If match, capture everything after prefix/ as wildcard value
+	 *
+	 * Example:
+	 *   Route: 'blog/*' => 'Blog@show/slug'
+	 *   URL: /blog/my-awesome-post
+	 *   Prefix: 'blog'
+	 *   Wildcard: 'my-awesome-post'
+	 *   Result: BlogController::show($slug='my-awesome-post')
+	 *
+	 * @return bool True if pattern matched, false otherwise
+	 */
+	protected function matchPatternRoute()
+	{
+		// Loop through all routes looking for wildcard patterns
+		foreach ($this->routes as $routeKey => $routeValue) {
+
+			// Check if route ends with /*
+			if (substr($routeKey, -2) === '/*') {
+
+				// Extract prefix (remove the /*)
+				$prefix = substr($routeKey, 0, -2);
+
+				// Check if URL starts with prefix/
+				// Using strpos for exact prefix match at start of string
+				if (strpos($this->url, $prefix . '/') === 0) {
+
+					// Capture everything after prefix/ as wildcard value
+					$this->wildcardValue = substr($this->url, strlen($prefix) + 1);
+
+					// Store matched route info
+					$this->route = $routeKey;
+					$this->routeData = $routeValue;
+					$this->isPatternMatch = true;
+
+					return true;
+				}
+			}
+		}
+
+		// No pattern matched
+		return false;
+	}
+
+	// ===========================================================================
+	// CONTROLLER RESOLUTION
+	// ===========================================================================
+
+	/**
+	 * Set controller from route metadata
+	 *
+	 * Parses the route metadata to extract the controller name.
+	 * Route metadata format: "Controller@method/param1/param2"
+	 * This method extracts "Controller" and stores "method/param1/param2" for later.
+	 *
+	 * Process:
+	 * 1. Split route metadata by '@' pattern
+	 * 2. First part is controller, second part is method metadata
+	 * 3. Validate controller exists
+	 *
+	 * Example:
+	 *   Route data: "User@show/id/action"
+	 *   Result: controller='User', methodData='show/id/action'
+	 *
+	 * @return RouteParser
+	 * @throws RouteException If controller not defined in route
+	 */
+	public function setController()
+	{
+		// Parse route metadata: "Controller@method/params" -> ['Controller', 'method/params']
+		$routeDataArray = Arr::parts($this->pattern, $this->routeData)
+		                      ->clean()
+		                      ->trim()
+		                      ->get();
+
+		// Validate controller exists in route definition
+		if (!Arr::exists(0, $routeDataArray) || empty($routeDataArray[0])) {
+			throw new RouteException("No controller associated with route: {$this->route}");
+		}
+
+		// Extract controller name
+		$this->controller = $routeDataArray[0];
+
+		// Store method metadata for later parsing (if exists)
+		$this->methodData = (count($routeDataArray) > 1) ? $routeDataArray[1] : null;
+
+		return $this;
+	}
+
+	/**
+	 * Get resolved controller name
+	 *
+	 * @return string|null Controller name or null if not set
 	 */
 	public function getController()
 	{
-		//return the contoller name
 		return $this->controller;
-
 	}
 
+	// ===========================================================================
+	// METHOD RESOLUTION
+	// ===========================================================================
+
 	/**
-	 *This method sets the value of the method name
+	 * Set method from route metadata or URL
 	 *
-	 *@param null
-	 *@return Object \RouteParser
+	 * Handles two scenarios:
+	 * 1. Route has no method metadata - extract method from URL
+	 * 2. Route has method metadata - parse it for method name and parameter names
+	 *
+	 * Process:
+	 * - If no method metadata:
+	 *   1. Check if controller has embedded parameters (e.g., "user/id")
+	 *   2. Extract controller and parameter names if present
+	 *   3. Fall back to URL parser for method name
+	 *
+	 * - If method metadata exists:
+	 *   1. Parse metadata string (e.g., "show/id/action" -> ['show', 'id', 'action'])
+	 *   2. First element is method name, rest are parameter names
+	 *   3. If URL also has a method, treat it as first parameter value
+	 *
+	 * Example flows:
+	 *   Route: 'user' => 'User@show/id/action', URL: /user/123/edit
+	 *   → method='show', methodArray=['show', 'id', 'action']
+	 *
+	 *   Route: 'api' => 'Api', URL: /api/users/list
+	 *   → method='users' (from URL)
+	 *
+	 * @return RouteParser
+	 * @throws RouteException If method format is invalid
 	 */
 	public function setMethod()
 	{
-		//check if method metadata is null
-		if(is_null($this->methodMetaData)){
+		// Case 1: No method metadata - extract from URL
+		if ($this->methodData === null) {
 
-			//if there was no method metaData check if there are names url param keys  in the controller name
-			$requestParamKeys = ArrayHelper::parts($this->urlParameterSeparator, $this->controller)->clean()->trim()->get();
+			// Check if controller name has embedded parameters
+			// Example: controller might be "user/id/action"
+			$keys = Arr::parts($this->separator, $this->controller)
+			            ->clean()
+			            ->trim()
+			            ->get();
 
-			//check if there are parameter found
-			if(count($requestParamKeys) > 1){
-
-				//set the new value of the controller
-				$this->controller = $requestParamKeys[0];
-
-				//set a value for the methodMetaData
-				$this->methodMetaDataArray = $requestParamKeys;
-
+			if (count($keys) > 1) {
+				// Controller has embedded params - extract them
+				$this->controller = $keys[0];
+				$this->methodArray = $keys;
 			}
 
-			//there is no method frm the routes, get the route from the UrlParser instance
-			$this->method = $this->UrlParserObjectInstance->getMethod();
+			// Get method from URL parser (e.g., /controller/method)
+			$this->method = $this->urlParser->getMethod();
 
 			return $this;
-
 		}
 
-		//there is method metadata
-		else{
+		// Case 2: Method metadata exists - parse it
+		// Format: "show/id/action" -> ['show', 'id', 'action']
+		$methodDataArray = Arr::parts($this->separator, $this->methodData)
+		                       ->clean()
+		                       ->trim()
+		                       ->get();
 
-			//get the methodMetaDataArray
-			$methodMetaDataArray = ArrayHelper::parts($this->urlParameterSeparator, $this->methodMetaData)->clean()->trim()->get();
-			
-			//put this in a try...catch block to enhance error handlign
-			try{
-
-				if(count($methodMetaDataArray) > 0){
-				 	
-				 	//set the value of the method property
-					$this->method = $methodMetaDataArray[0];
-					
-					//check if the value of method from url parse is not null
-					if($this->UrlParserObjectInstance->getMethod() !== null){
-
-						//if the method name can be got from the methodMetaData, then lets prepend the value of method to the urlParser parameters
-						$this->UrlParserObjectInstance->setParameters($this->UrlParserObjectInstance->getMethod(), false);
-
-					}
-
-					//set the methodMetaDataArray property
-					$this->methodMetaDataArray = $methodMetaDataArray;
-					
-					//returnt this class instance
-					return $this;
-
-				}
-
-				//there was not method data found after parsing metaData, this is wrong, throw an error
-				else{
-
-					//throw an exception
-					throw new RouteException(get_class(new RouteException) ." : The method name specified after this named route " . $this->routeName . " => " . $this->controller . "@" . $this->methodMetaData . " is invalid format", 1);
-					
-				}
-
-			}
-
-			catch(RouteException $RouteExceptionObjectInstance){
-
-				//display the error message
-				$RouteExceptionObjectInstance->errorShow();
-
-			}
-
+		// Validate we got at least a method name
+		if (empty($methodDataArray)) {
+			throw new RouteException(
+				"Invalid method format for route '{$this->route}': {$this->controller}@{$this->methodData}"
+			);
 		}
 
+		// First element is method name
+		$this->method = $methodDataArray[0];
+
+		// Store full array including parameter names for later mapping
+		$this->methodArray = $methodDataArray;
+
+		// Handle edge case: URL has a method segment when route already defines method
+		// Example: Route 'user'=>'User@show', URL '/user/edit' - 'edit' becomes a parameter
+		if ($this->urlParser->getMethod() !== null) {
+			// Prepend URL method as first parameter value
+			$this->urlParser->setParameters($this->urlParser->getMethod(), false);
+		}
+
+		return $this;
 	}
 
 	/**
-	 *This method returns the method name
+	 * Get resolved method name
 	 *
-	 *@param null
-	 *@return string Method name
+	 * @return string|null Method name or null if not set
 	 */
 	public function getMethod()
 	{
-		//return the Method name
 		return $this->method;
-
 	}
 
+	// ===========================================================================
+	// PARAMETER RESOLUTION
+	// ===========================================================================
+
 	/**
-	 *This method sets the value of the request parameter
+	 * Set parameters from URL and inject into Input class
 	 *
-	 *@param null
-	 *@return Object \RouteParser
+	 * Extracts URL parameters and maps them to named parameters if route
+	 * definition includes parameter names. Then injects them into the Input
+	 * class for global access via Input::get() or Input::url().
+	 *
+	 * Process:
+	 * 1. Get parameter values from URL parser
+	 * 2. If route defined parameter names, create associative array
+	 * 3. Map parameter names to values
+	 * 4. Inject into Input class for global access
+	 *
+	 * Parameter Mapping:
+	 *   Route: 'user' => 'User@show/id/action'
+	 *   URL: /user/123/edit
+	 *   methodArray: ['show', 'id', 'action']
+	 *   URL values: ['123', 'edit']
+	 *   Result: ['id' => '123', 'action' => 'edit']
+	 *
+	 * Why inject into Input:
+	 *   Controllers can access params both as method arguments AND via Input::get()
+	 *   - Method args: public function show($id, $action) { }
+	 *   - Input class: $id = Input::get('id') or Input::url('id')
+	 *
+	 * @return RouteParser
 	 */
 	public function setParameters()
-	{		
-		//set the url parameter from the UrlParserObjectInstance
-		$this->parameters = $this->UrlParserObjectInstance->getParameters();
+	{
+		// Get parameter values from URL (e.g., ['123', 'edit'])
+		$values = $this->urlParser->getParameters();
 
-		//populate the Input Class data
-		Input::setGet()->setPost();
-		
-		//return this object instance
+		// If this is a pattern match, prepend the wildcard value as first parameter
+		// Example: Route 'blog/*', URL '/blog/my-post' → wildcard='my-post'
+		if ($this->isPatternMatch && $this->wildcardValue !== null) {
+			array_unshift($values, $this->wildcardValue);
+		}
+
+		// Check if route defined parameter names
+		// methodArray[0] is method name, rest are parameter names
+		if (count($this->methodArray) > 1) {
+
+			// Extract parameter names (skip first element which is method name)
+			$paramNames = array_slice($this->methodArray, 1);
+
+			// Map parameter names to values if we have enough values
+			if (count($values) >= count($paramNames)) {
+				// Create associative array: ['id' => '123', 'action' => 'edit']
+				$mapped = array_combine(
+					$paramNames,
+					array_slice($values, 0, count($paramNames))
+				);
+
+				// Merge with any extra unmapped parameters (keep as numeric)
+				$extra = array_slice($values, count($paramNames));
+				$this->parameters = array_merge($mapped, $extra);
+			} else {
+				// Not enough values for all parameter names - keep numeric
+				$this->parameters = $values;
+			}
+		} else {
+			// No parameter names defined - keep as numeric array
+			$this->parameters = $values;
+		}
+
+		// Inject parameters into Input class for global access
+		// Now controllers can use: Input::get('id') or Input::url('id')
+		Input::setUrl($this->parameters);
+
 		return $this;
-
 	}
 
 	/**
-	 *This method returns the parameters array
+	 * Get URL parameters
 	 *
-	 *@param null
-	 *@return string Method name
+	 * Returns either associative array (if route defined parameter names)
+	 * or numeric array (if no parameter names defined).
+	 *
+	 * @return array Parameters array
 	 */
 	public function getParameters()
 	{
-		//return the Method name
 		return $this->parameters;
-
 	}
 
 }

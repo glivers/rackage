@@ -142,7 +142,7 @@ class Router {
 		if ($this->urlParser === null) {
 			$this->urlParser = new UrlParser(
 				Registry::url(),
-				$this->settings['url_component_separator']
+				$this->settings['url_separator']
 			);
 		}
 
@@ -277,9 +277,31 @@ class Router {
 
 		// Check if controller class exists
 		if (!class_exists($controllerClass)) {
-			throw new RouteException(
-				"Controller class '{$controllerClass}' is not defined"
-			);
+
+			// Check if catch-all routing is enabled
+			if (isset(Registry::settings()['routing']['catch_all']) &&
+			    Registry::settings()['routing']['catch_all'] === true) {
+
+				// Use catch-all controller instead of throwing error
+				$this->controller = Registry::settings()['routing']['ca_controller'];
+				$this->action = Registry::settings()['routing']['ca_method'];
+
+				// Pass full URL as first parameter to catch-all method
+				$this->parameters = array(Registry::url());
+
+				// Rebuild controller class name and validate catch-all controller exists
+				$controllerClass = 'Controllers\\' . ucwords($this->controller) . 'Controller';
+				if (!class_exists($controllerClass)) {
+					throw new RouteException(
+						"Catch-all controller '{$controllerClass}' is not defined"
+					);
+				}
+			} else {
+				// Catch-all disabled - throw original error
+				throw new RouteException(
+					"Controller class '{$controllerClass}' is not defined"
+				);
+			}
 		}
 
 		// Store the full controller class name
@@ -329,8 +351,8 @@ class Router {
 			);
 		}
 
-		// Initialize controller properties (from trait)
-		$dispatch->set_rachie_fr_controller_trait_properties();
+		// Initialize controller properties
+		$dispatch->_setRachieProperties();
 
 		// Get reflection info for method parameter handling
 		$reflection = new ReflectionClass($dispatch);
