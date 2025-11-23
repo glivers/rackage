@@ -19,9 +19,9 @@
  * @package Rachie\Rackage
  */
 
-use Rackage\Database\BaseDb;
+use Rackage\Database\Database;
 use Rackage\Cache\CacheBase;
-use Rackage\Templates\BaseTemplateClass;
+use Rackage\Templates\Template;
 
 class Registry {
 
@@ -333,8 +333,8 @@ class Registry {
 		}
 
 		// Create and connect database instance
-		$instance = new BaseDb(
-			$config['default'], 
+		$instance = new Database(
+			$config['default'],
 			$config[$config['default']]
 		);
 
