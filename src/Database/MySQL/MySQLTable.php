@@ -15,7 +15,7 @@ use Rackage\Path;
 use Rackage\File\FileInfo;
 use Rackage\File\FileHandler;
 use Rackage\Database\MySQL\MySQLResponseObject;
-use Rackage\Database\MySQL\MySQLException;
+use Rackage\Database\DatabaseException;
 
 class MySQLTable {
 
@@ -231,7 +231,7 @@ class MySQLTable {
 					$this->columns[$column_name]['update'] 	= (array_key_exists("@update", $comment_array)) ? true : null;
 					$this->columns[$column_name]['drop'] 	= (array_key_exists("@drop", $comment_array)) ? $column_name : null;
 
-					if ( ! in_array($this->columns[$column_name]['type'], $this->data_types))	throw new MySQLException(get_class(new MySQLException)." {$this->columns[$column_name]['type']} is not a valid table field data type");
+					if ( ! in_array($this->columns[$column_name]['type'], $this->data_types))	throw new DatabaseException(get_class(new DatabaseException)." {$this->columns[$column_name]['type']} is not a valid table field data type");
 
 					if ($this->columns[$column_name]['primary'] !== null) $this->primaries[$column_name] = array();
 
@@ -239,11 +239,11 @@ class MySQLTable {
 					
 			}
 
-			if (count($this->primaries) !== 1)	throw new MySQLException(get_class(new MySQLException)." {$this->table} table must have exactly one @primary column");
+			if (count($this->primaries) !== 1)	throw new DatabaseException(get_class(new DatabaseException)." {$this->table} table must have exactly one @primary column");
 
 			return $this;
 		
-		} catch (MySQLException $e) {
+		} catch (DatabaseException $e) {
 
 			$e->errorShow();
 			
@@ -383,7 +383,7 @@ class MySQLTable {
 			
 			return $this;
 
-		} catch (MySQLException $e) {
+		} catch (DatabaseException $e) {
 
 			$e->errorShow();
 
@@ -570,16 +570,16 @@ class MySQLTable {
 
 			$result = $this->connection->execute("DROP TABLE IF EXISTS {$this->table};");
 
-			if ($result === false)	throw new MySQLException(get_class(new MySQLException)." There was an error in the query: {$this->connection->lastError()}");
+			if ($result === false)	throw new DatabaseException(get_class(new DatabaseException)." There was an error in the query: {$this->connection->lastError()}");
 
 			$result = $this->connection->execute($this->query_string);
 
-			if ($result === false) throw new MySQLException(get_class(new MySQLException)." There was an error in the query: {$this->connection->lastError()} <span class=\"query-string\">".$this->query_string."</span>");
+			if ($result === false) throw new DatabaseException(get_class(new DatabaseException)." There was an error in the query: {$this->connection->lastError()} <span class=\"query-string\">".$this->query_string."</span>");
 
 			return true;
 				
 		}
-		 catch (MySQLException $e) {
+		 catch (DatabaseException $e) {
 			
 			$e->errorShow();	
 		}	
@@ -597,12 +597,12 @@ class MySQLTable {
 
 			$result = $this->connection->execute($this->query_string);
 
-			if ($result === false) throw new MySQLException(get_class(new MySQLException)." There was an error in the query: {$this->connection->lastError()} <span class=\"query-string\">".$this->query_string."</span>");
+			if ($result === false) throw new DatabaseException(get_class(new DatabaseException)." There was an error in the query: {$this->connection->lastError()} <span class=\"query-string\">".$this->query_string."</span>");
 
 			return true;
 				
 		}
-		 catch (MySQLException $e) {
+		 catch (DatabaseException $e) {
 			
 			$e->errorShow();	
 		}	

@@ -12,7 +12,7 @@
  *@version 2.0.1
  */
 
-use Rackage\Database\MySQL\MySQLException;
+use Rackage\Database\DatabaseException;
 
 class MySQL {
 
@@ -153,7 +153,7 @@ class MySQL {
 				if ($this->service->connect_error) 
 				{
 					//throw exception
-					throw new MySQLException("Unable to connect to Database service with the provided settings");
+					throw new DatabaseException("Unable to connect to Database service with the provided settings");
 
 				}
 
@@ -163,10 +163,10 @@ class MySQL {
 			}
 
 			//diplay error message
-			catch(MySQLException $MySQLExceptionObject){
+			catch(DatabaseException $DatabaseExceptionObject){
 
 				//display error message
-				$MySQLExceptionObject->errorShow();
+				$DatabaseExceptionObject->errorShow();
 
 			}
 			
@@ -231,7 +231,7 @@ class MySQL {
 			if (! $this->validService() ) 
 			{
 				//throw exceptions
-				throw new MySQLException("Not connected to a valid database service");
+				throw new DatabaseException("Not connected to a valid database service");
 
 			}
 
@@ -241,10 +241,10 @@ class MySQL {
 		}
 
 		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
+		catch(DatabaseException $DatabaseExceptionObject){
 
 			//display error message
-			$MySQLExceptionObject->errorShow();
+			$DatabaseExceptionObject->errorShow();
 
 		}
 
@@ -267,7 +267,7 @@ class MySQL {
 			if (! $this->validService() ) 
 			{
 				//throw exceptions
-				throw new MySQLException("Not connected to a valid database service");
+				throw new DatabaseException("Not connected to a valid database service");
 
 			}
 
@@ -277,10 +277,10 @@ class MySQL {
 		}
 
 		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
+		catch(DatabaseException $DatabaseExceptionObject){
 
 			//display error message
-			$MySQLExceptionObject->errorShow();
+			$DatabaseExceptionObject->errorShow();
 
 		}
 		
@@ -303,7 +303,7 @@ class MySQL {
 			if ( ! $this->validService() ) 
 			{
 				//throw exception
-				throw new MySQLException("Not connected to a valid database service");
+				throw new DatabaseException("Not connected to a valid database service");
 
 			}
 
@@ -313,10 +313,10 @@ class MySQL {
 		}
 
 		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
+		catch(DatabaseException $DatabaseExceptionObject){
 
 			//display error message
-			$MySQLExceptionObject->errorShow();
+			$DatabaseExceptionObject->errorShow();
 
 		}
 		
@@ -339,7 +339,7 @@ class MySQL {
 			if ( ! $this->validService() ) 
 			{
 				//throw exception
-				throw new MySQLException("Not connected to a valid database service");
+				throw new DatabaseException("Not connected to a valid database service");
 
 			}
 
@@ -349,10 +349,10 @@ class MySQL {
 		}
 
 		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
+		catch(DatabaseException $DatabaseExceptionObject){
 
 			//display error message
-			$MySQLExceptionObject->errorShow();
+			$DatabaseExceptionObject->errorShow();
 
 		}
 
@@ -375,7 +375,7 @@ class MySQL {
 			if ( ! $this->validService() ) 
 			{
 				//throw error
-				throw new MySQLException("Not connected to a valid database service");
+				throw new DatabaseException("Not connected to a valid database service");
 
 			}
 
@@ -385,10 +385,10 @@ class MySQL {
 		}
 
 		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
+		catch(DatabaseException $DatabaseExceptionObject){
 
 			//display error message
-			$MySQLExceptionObject->errorShow();
+			$DatabaseExceptionObject->errorShow();
 
 		}
 

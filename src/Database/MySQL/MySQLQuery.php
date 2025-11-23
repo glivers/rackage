@@ -1,1245 +1,1205 @@
 <?php namespace Rackage\Database\MySQL;
 
 /**
- *This class writes MySQLi vendor-specific database code
+ * MySQL Query Builder
  *
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Rackage
- *@package Rackage\Database
- *@link https://github.com/glivers/rackage
- *@license http://opensource.org/licenses/MIT MIT License
- *@version 2.0.1
+ * This class handles MySQL-specific query construction and execution.
+ * It is the implementation layer that Model.php delegates to for all database operations.
+ *
+ * Architecture:
+ *   - Model.php provides static methods for developer-facing API
+ *   - Model.php delegates to this class via Query() singleton
+ *   - This class builds SQL query strings from method calls
+ *   - Query strings are executed via MySQLConnector
+ *   - Results are returned via MySQLResponseObject
+ *
+ * Query Building Pattern:
+ *   1. Query builder methods (setTable, where, order, etc.) store parameters in properties
+ *   2. Build methods (buildSelect, buildInsert, etc.) compose SQL from stored properties
+ *   3. Execution methods (all, first, save, delete) build SQL and execute via connector
+ *   4. Response object contains results, metadata, and query performance metrics
+ *
+ * Security:
+ *   All values are escaped via quote() method which uses MySQLConnector->escape()
+ *   WHERE clause uses sprintf with %s placeholders - values are quoted before sprintf
+ *   This prevents SQL injection while maintaining query flexibility
+ *
+ * Example Flow:
+ *   Posts::where('status', 'published')->order('created_at', 'desc')->all()
+ *     → Model::where() calls MySQLQuery->where(['status', 'published'])
+ *     → Model::order() calls MySQLQuery->order('created_at', 'desc')
+ *     → Model::all() calls MySQLQuery->all()
+ *       → all() calls buildSelect() to compose SQL
+ *       → Executes: SELECT * FROM posts WHERE status='published' ORDER BY created_at desc
+ *       → Returns MySQLResponseObject with results
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Database
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.1
  */
 
 use Rackage\ArrayHelper\ArrayHelper as ArrayUtility;
 use Rackage\Database\MySQL\MySQLResultObject;
-use Rackage\Database\MySQL\MySQLException;
+use Rackage\Database\DatabaseException;
 
-class MySQLQuery {
+class MySQLQuery
+{
+
+	// =========================================================================
+	// PROPERTIES
+	// =========================================================================
 
 	/**
-	 *@var object MySQL connection instance object
+	 * MySQL connection instance
+	 * @var object
 	 */
 	protected $connector;
 
 	/**
-	 *@var string The name of the table on which to perform query
+	 * Table name for query
+	 * @var string
 	 */
 	protected $froms;
 
 	/**
-	 *@var array The array of table fields to select
+	 * Fields to select (multidimensional array: table => [fields])
+	 * @var array
 	 */
 	protected $fields;
 
 	/**
-	 *@var int The max number of rows to return per query
+	 * Maximum number of rows to return
+	 * @var int
 	 */
 	protected $limits;
 
 	/**
-	 *@var int The row number from where to start returning rows
+	 * Row offset for pagination
+	 * @var int
 	 */
 	protected $offset;
 
 	/**
-	 *@var string The column name of method to sort the selected data
+	 * Column name to sort by
+	 * @var string
 	 */
 	protected $orders;
 
 	/**
-	 *@var string Set to DISTINCT to only return unique fields.
+	 * DISTINCT keyword for unique results
+	 * @var string
 	 */
 	protected $distinct = ' ';
 
 	/**
-	 *@var
+	 * Sort direction (ASC or DESC)
+	 * @var string
 	 */
 	protected $directions;
 
 	/**
-	 *@var string This specifies the joins to be performed on the table
+	 * JOIN clauses (tables and conditions)
+	 * @var array
 	 */
 	protected $joins = array();
 
 	/**
-	 *@var string The where parameters to use in performing query
+	 * WHERE conditions
+	 * @var array
 	 */
 	protected $wheres = array();
 
 	/**
-	*@var object Query Response Object
-	*/
+	 * Query response object
+	 * @var MySQLResponseObject
+	 */
 	protected $responseObject;
 
+	// =========================================================================
+	// CONSTRUCTOR
+	// =========================================================================
+
 	/**
-	 *This stores the database connection instance object
+	 * Constructor - Initialize query builder
 	 *
-	 **@param object $instance This is the database connection object instance
+	 * Sets up the MySQL connection and response object.
+	 *
+	 * @param array $instance Array containing 'connector' key with MySQLConnector instance
+	 * @return void
 	 */
 	public function __construct(array $instance)
 	{
-		//assign the connection object instance to the $this->connnector variable
+		// Store connection instance
 		$this->connector = $instance['connector'];
 
-		//create the reponse object instance
+		// Create response object instance
 		$this->responseObject = new MySQLResponseObject();
-
 	}
 
+	// =========================================================================
+	// SECURITY / ESCAPING
+	// =========================================================================
+
 	/**
-	 *This method quotes input data according to how MySQL woudl expect it.
-	 *@param mixed String|Array Input to be quoted
-	 *@return mixed Output after input is quoted
+	 * Quote and escape values for MySQL
+	 *
+	 * Escapes and quotes input data according to MySQL requirements.
+	 * Handles strings, integers, arrays, nulls, booleans, and empty values.
+	 *
+	 * Security:
+	 *   Uses MySQLConnector->escape() for proper escaping.
+	 *   Prevents SQL injection by sanitizing all values.
+	 *
+	 * Examples:
+	 *   quote('hello')        → 'hello'
+	 *   quote(123)            → '123'
+	 *   quote(['a', 'b'])     → ('a', 'b')
+	 *   quote(null)           → NULL
+	 *   quote(true)           → 1
+	 *
+	 * @param mixed $value Value to quote (string, int, array, null, bool)
+	 * @return mixed Quoted and escaped value
 	 */
 	protected function quote($value)
 	{
-		//if string, quote and return
-		if ( is_string($value) || is_int($value) )  
+		// String or integer - escape and quote
+		if (is_string($value) || is_int($value))
 		{
-			//call connector method to escape string
 			$escaped = $this->connector->escape($value);
 
-			//return escaped string
 			return "'{$escaped}'";
-
 		}
 
-		//if input is array, loop through values escaping
-		elseif ( is_array($value) ) 
+		// Array - quote each element and join
+		elseif (is_array($value))
 		{
-			//define array to contain new quoted values
 			$buffer = array();
 
-			//loop through the array one item at a time
-			foreach ($value as $i) 
+			foreach ($value as $i)
 			{
-				//quote string and add to the $buffer array container
-				array_push($buffer,$this->quote($i));
+				// Recursively quote each element
+				array_push($buffer, $this->quote($i));
 
-				//join the array elements to form one string
+				// Join array elements
 				$buffer = join(", ", $buffer);
 
-				//quote new string, put in parenthesis and return
+				// Return in parentheses
 				return "({$buffer})";
-
 			}
-
 		}
 
-		//return null if null value was passed
-		elseif ( is_null($value) ) 
+		// NULL value
+		elseif (is_null($value))
 		{
-			//return null as string
 			return 'NULL';
-
 		}
 
-		//if boolean, return interger value of boolean
-		elseif ( is_bool($value) ) 
+		// Boolean - convert to integer
+		elseif (is_bool($value))
 		{
-			//get interger value and return
 			return (int)$value;
-
 		}
 
-		//check if empty value was returned
-		elseif ( empty($value) ) 
+		// Empty value
+		elseif (empty($value))
 		{
-			//return empty string
 			return "' '";
-
 		}
 
-		//if input value does not fall among any of these, escape and return output
-		else return $this->connector->escape($value);
+		// Fallback - escape and return
+		else
+		{
+			return $this->connector->escape($value);
+		}
+	}
 
+	// =========================================================================
+	// QUERY BUILDER METHODS (Set Parameters)
+	// =========================================================================
+
+	/**
+	 * Set table name for query
+	 *
+	 * Specifies which table to query.
+	 * Automatically initializes fields array with '*' (all columns).
+	 *
+	 * @param string $table Table name
+	 * @return $this For method chaining
+	 * @throws DatabaseException If table name is empty
+	 */
+	public function setTable($table)
+	{
+		try
+		{
+			// Validate table name is not empty
+			if (empty($table))
+			{
+				throw new DatabaseException("Invalid argument passed for table name", 1);
+			}
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
+		}
+
+		// Set table name
+		$this->froms = $table;
+
+		// Initialize fields if not set
+		if(!isset($this->fields[$table]))
+		{
+			$this->fields[$table] = array("*");
+		}
+
+		return $this;
 	}
 
 	/**
-	 * This method sets the table name to be selected
-	 * @param string $table The name of the table
-	 * @return $this
+	 * Set columns to select from table
+	 *
+	 * Specifies which columns to retrieve from the table.
+	 *
+	 * @param string $table Table name
+	 * @param array $fields Column names to select (default: all columns)
+	 * @return void
+	 * @throws DatabaseException If table name is empty
 	 */
-	public function setTable($table){
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//check if from is empty
-			if ( empty($table)) 
+	public function setFields($table, $fields = array("*"))
+	{
+		try
+		{
+			// Validate table name is not empty
+			if (empty($table))
 			{
-				//throw new exception
-				throw new MySQLException("Invalid argument passed for table name", 1);
-
+				throw new DatabaseException("Invalid argument passed for table name", 1);
 			}
-
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}		
-
-		//set the protected $from value
-		$this->froms = $table;
-		if(!isset($this->fields[$table])) $this->fields[$table] = array("*");
-		return $this;
-			
-	}
-
-	/** 
-	 * This method sets the columns for a table to be selected
-	 * @param string $table The name of the table
-	 * @param array $fields The numeric array of table column names
-	 * @return $this
-	 */
-	public function setFields($table, $fields = array("*")){
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//check if from is empty
-			if ( empty($table)) 
-			{
-				//throw new exception
-				throw new MySQLException("Invalid argument passed for table name", 1);
-
-			}
-
-		}
-
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}		
-
-		//check if fields is sset and set the fields param
+		// Set table and fields
 		$this->froms = $table;
 		$this->fields[$table] = $fields;
 	}
 
 	/**
-	 *This method builds query string for joining tables in query.
-	 *@param string $table the table to perform join on
-	 *@param string $condition The conditions for the join
-	 *@param array $fields The table column name to join in numeric array
-	 *@return object $this
-	 *@throws \MySQLException if $table or $condition have empty string values 
+	 * Add LEFT JOIN to query
+	 *
+	 * Joins another table to retrieve related data.
+	 * Supports multiple joins by calling this method multiple times.
+	 *
+	 * Examples:
+	 *   leftJoin('users', 'posts.user_id = users.id', ['users.name'])
+	 *   leftJoin('categories', 'posts.category_id = categories.id', ['*'])
+	 *
+	 * @param string $table Table name to join
+	 * @param string $condition Join condition (e.g., 'posts.user_id = users.id')
+	 * @param array $fields Columns to select from joined table
+	 * @return $this For method chaining
+	 * @throws DatabaseException If table or condition is empty
 	 */
 	public function leftJoin($table, $condition, $fields = array("*"))
 	{
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//throw exception if $table passed is empty
-			if ( empty($table) )  
+		try
+		{
+			// Validate table is not empty
+			if (empty($table))
 			{
-				//throw exception for invalid argument
-				throw new MySQLException("Invalid table argument $table passed for the leftJoin Clause", 1);
-
+				throw new DatabaseException("Invalid table argument $table passed for the leftJoin Clause", 1);
 			}
 
-			//throw exception if the $condition passed is empty
-			if ( empty($condition) ) 
+			// Validate condition is not empty
+			if (empty($condition))
 			{
-				//throw exception
-				throw new MySQLException("Invalid argument $condition passed for the leftJoin Clause", 1);
-
+				throw new DatabaseException("Invalid argument $condition passed for the leftJoin Clause", 1);
 			}
-			
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-		//add to the fields property
+		// Add fields for this table
 		$this->fields += array($table => $fields);
 
-		//populate the joins property
-		$this->joins['tables'][] = $table; //= " LEFT JOIN {$table} ON {$condition} ";
+		// Store join table and condition
+		$this->joins['tables'][] = $table;
 		$this->joins['conditions'][] = $condition;
 
-		//return instance of this object
 		return $this;
-
 	}
 
 	/**
-	 *This method sets the limit for the number of rows to return.
-	 *@param int $limit The maximum number of rows to return per query
-	 *@param int $page An interger used to define the offset of the select query
-	 *@return object $this
-	 *@throws \MySQLException if $limit has an empty value
+	 * Set row limit with pagination
+	 *
+	 * Limits the number of rows returned by the query.
+	 * Supports pagination by calculating offset from page number.
+	 *
+	 * Examples:
+	 *   limit(10)      → LIMIT 10
+	 *   limit(20, 1)   → LIMIT 0, 20 (page 1)
+	 *   limit(20, 2)   → LIMIT 20, 20 (page 2)
+	 *   limit(20, 3)   → LIMIT 40, 20 (page 3)
+	 *
+	 * @param int $limit Maximum number of rows to return
+	 * @param int $page Page number for pagination (default: 1)
+	 * @return $this For method chaining
+	 * @throws DatabaseException If limit is empty
 	 */
 	public function limit($limit, $page = 1)
 	{
-
-		//put this in try...catch block for better error handling
-		try{
-
-			if ( empty($limit) ) 
+		try
+		{
+			// Validate limit is not empty
+			if (empty($limit))
 			{
-				//throw exception if value of limit passed is negative
-				throw new MySQLException("Empty argument passed for $limit in method limit()", 1);
-
+				throw new DatabaseException("Empty argument passed for $limit in method limit()", 1);
 			}
-
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-		//set the limits property
+		// Set limit
 		$this->limits = $limit;
 
-		//set the offset property
+		// Calculate offset for pagination
 		$this->offset = (int)$limit * ($page - 1);
 
-		//return this object instance
 		return $this;
-
 	}
 
 	/**
-	 *This method sets the DISTINCT param in query string to only return non duplicated values in a column.
-	 *@param null
-	 *@return Object $this
-	 *@throws This method does not throw an error
+	 * Set DISTINCT to return only unique results
+	 *
+	 * Adds DISTINCT keyword to query to eliminate duplicate rows.
+	 *
+	 * @return $this For method chaining
 	 */
 	public function unique()
 	{
-
-		//set the value of distinct
 		$this->distinct = ' DISTINCT ';
 
-		//return this object instance
 		return $this;
-
 	}
 
 	/**
-	 *This method sets the order in which to sort the query results.
-	 *@param string $order The name of the field to use for sorting
-	 *@param string $direction This specifies whether sorting should be in ascending or descending order
-	 *@return Object $this
-	 *@throws \MySQLException if $order has an empty value
+	 * Set ORDER BY clause
+	 *
+	 * Specifies how to sort query results.
+	 *
+	 * Examples:
+	 *   order('created_at', 'desc')  → ORDER BY created_at desc
+	 *   order('name', 'asc')         → ORDER BY name asc
+	 *
+	 * @param string $order Column name to sort by
+	 * @param string $direction Sort direction: 'asc' or 'desc' (default: 'asc')
+	 * @return $this For method chaining
+	 * @throws DatabaseException If order is empty
 	 */
 	public function order($order, $direction = 'asc')
 	{
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//throw esception if empty value for $order was passed
-			if ( empty($order) ) 
+		try
+		{
+			// Validate order field is not empty
+			if (empty($order))
 			{
-				//throw exception
-				throw new MySQLException("Empty value passed for parameter $order in order() method", 1);
-
+				throw new DatabaseException("Empty value passed for parameter $order in order() method", 1);
 			}
-			
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-		//set the orders property
+		// Set order column and direction
 		$this->orders = $order;
-
-		//set the directions property
 		$this->directions = $direction;
 
 		return $this;
-
 	}
 
 	/**
-	 *This method defines the where parameters of the query string.
-	 *@param array $argument The array containing the arguments passed.
-	 *@return Object $this
-	 *@throws \MySQLException if an uneven number of arguments was passed
+	 * Add WHERE conditions
+	 *
+	 * Builds WHERE clause from arguments.
+	 * Supports multiple WHERE calls - they are combined with AND.
+	 *
+	 * Usage Patterns:
+	 *   where(['status', 'published'])
+	 *     → WHERE status='published'
+	 *
+	 *   where(['price > ?', 100])
+	 *     → WHERE price > 100
+	 *
+	 *   where(['status = ? AND views > ?', 'published', 1000])
+	 *     → WHERE status='published' AND views > 1000
+	 *
+	 * Security:
+	 *   Values are quoted via quote() method before insertion.
+	 *   Uses sprintf with %s placeholders for safe substitution.
+	 *
+	 * @param array $arguments Arguments array from Model::where()
+	 * @return $this For method chaining
+	 * @throws DatabaseException If argument count is invalid
 	 */
 	public function where($arguments)
 	{
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//throw exception if argument pairs do ot match
-			if ( is_float( sizeof($arguments) / 2 ) ) 
-			{
-				//throw exception
-				throw new MySQLException("No arguments passed for the where clause");
-
-			}
-			
-		}
-
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-
-		//check if only one argument pair was passed'
-		if ( sizeof($arguments) == 2) 
+		try
 		{
-			//get first argument and replace ? with a placeholder
+			// Validate argument pairs match
+			if (is_float(sizeof($arguments) / 2))
+			{
+				throw new DatabaseException("No arguments passed for the where clause");
+			}
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
+		}
+
+		// Single argument pair (field, value)
+		if (sizeof($arguments) == 2)
+		{
+			// Replace ? with %s placeholder
 			$arguments[0] = preg_replace("#\?#", "%s", $arguments[0]);
 
-			//quote the argument content
+			// Quote the value
 			$arguments[1] = $this->quote($arguments[1]);
 
-			//populate the wheres array
+			// Build WHERE clause with sprintf
 			$this->wheres[] = call_user_func_array("sprintf", $arguments);
 
-			//return this object instance
-			return $this;	
-
-
+			return $this;
 		}
 
-		//there are multiple argument supplied
+		// Multiple argument pairs
 		else
 		{
-			//get the number of iterations 
+			// Calculate number of iterations
 			$count = sizeof($arguments) / 2;
 
-			//loop through number of iterations population the wheres array
-			for ($i = 0; $i < $count; $i++ ) 
-			{ 
-				//get the batch of array to work with
-				$argumentsPair  = array_splice($arguments, 0, 2);
+			// Process each pair
+			for ($i = 0; $i < $count; $i++)
+			{
+				// Extract one pair
+				$argumentsPair = array_splice($arguments, 0, 2);
 
-				//get first argument and replace ? with a placeholder
+				// Replace ? with %s placeholder
 				$argumentsPair[0] = preg_replace("#\?#", "%s", $argumentsPair[0]);
 
-				//quote the argument content
+				// Quote the value
 				$argumentsPair[1] = $this->quote($argumentsPair[1]);
-				
-				//populate the wheres array
-				$this->wheres[] = call_user_func_array("sprintf", $argumentsPair);
 
+				// Build WHERE clause with sprintf
+				$this->wheres[] = call_user_func_array("sprintf", $argumentsPair);
 			}
 
-			//return this object instance
-			return $this;	
-
+			return $this;
 		}
-		
 	}
 
+	// =========================================================================
+	// BUILD METHODS (Construct SQL Strings)
+	// =========================================================================
+
 	/**
-	 *This method builds a select query string.
-	 *@param null
-	 *@return string The select query string formed
-	 *@throws This method does not throw an error
+	 * Build SELECT query string
+	 *
+	 * Constructs SELECT query from stored parameters.
+	 * Handles fields, joins, where, order, and limit clauses.
+	 *
+	 * Query Template:
+	 *   SELECT [DISTINCT] fields FROM table [JOIN] [WHERE] [ORDER BY] [LIMIT]
+	 *
+	 * @return string Complete SELECT query
 	 */
 	protected function buildSelect()
 	{
-		//define a container fields array
 		$fields = array();
-
-		//
-		$where = $order = $limit = $join ="";
-
-		//
+		$where = $order = $limit = $join = "";
 		$template = "SELECT %s %s FROM %s %s %s %s %s";
 
-		//loop through the fields
-		foreach ($this->fields as $table => $tableFields) 
+		// Build fields list
+		foreach ($this->fields as $table => $tableFields)
 		{
-			//loop through the fields checking for aliases
-			foreach ($tableFields as $field => $alias) 
+			foreach ($tableFields as $field => $alias)
 			{
-				//if field is string, return field name
-				if ( is_string($field) && $field != 'COUNT(1)')
+				// Field with alias
+				if (is_string($field) && $field != 'COUNT(1)')
 				{
-					//add to fields array
 					$fields[] = "{$table}.{$field} AS {$alias}";
-
 				}
-				elseif (is_string($field) && $field == 'COUNT(1)') 
+				// COUNT function
+				elseif (is_string($field) && $field == 'COUNT(1)')
 				{
-					//add to fields array
 					$fields[] = "{$field} AS {$alias}";
-
 				}
-				//not an array, return alias
+				// Field without alias
 				else
 				{
-					//get alias as field name
 					$fields[] = "{$table}.{$alias}";
-
 				}
-
 			}
-
 		}
 
-		//turn the fields into a string
+		// Convert fields array to string
 		$fields = join(", ", $fields);
 
-		//get the query joins
+		// Build JOIN clause
 		$queryJoin = $this->joins;
 
-		//check if the join parameter is empty
-		if ( ! empty($queryJoin) ) 
+		if (!empty($queryJoin))
 		{
 			$joinTables = "(" . join(", ", $queryJoin['tables']) . ")";
 			$joinConditions = "(" . join(" AND ", $queryJoin['conditions']) . ")";
-			//add the joins
-			$join = " LEFT JOIN $joinTables ON $joinConditions";
 
+			$join = " LEFT JOIN $joinTables ON $joinConditions";
 		}
 
-		//get the where clause
+		// Build WHERE clause
 		$queryWhere = $this->wheres;
 
-		//check if the wheres clause is empty
-		if ( ! empty($queryWhere) ) 
+		if (!empty($queryWhere))
 		{
-			//append where clause
 			$joined = join(" AND ", $queryWhere);
 
-			//assign string to $where var
 			$where = "WHERE {$joined}";
-
 		}
 
-		//get the order clause
+		// Build ORDER BY clause
 		$queryOrder = $this->orders;
 
-		//check if the orders clause is empty
-		if ( ! empty($queryOrder) ) 
+		if (!empty($queryOrder))
 		{
-			//get the direction if order
 			$orderDirection = $this->directions;
 
-			//assign string to order variable
 			$order = "ORDER BY {$queryOrder} {$orderDirection}";
-
 		}
 
-		//get the limits clause
+		// Build LIMIT clause
 		$queryLimit = $this->limits;
 
-		//check if the limits clause is empty
-		if ( ! empty($queryLimit) ) 
+		if (!empty($queryLimit))
 		{
-			//get the offset
 			$limitOffset = $this->offset;
 
-			//if offset has been defined
-			if ( $limitOffset ) 
+			// With offset (pagination)
+			if ($limitOffset)
 			{
-				//get the limit string with offset
 				$limit = "LIMIT {$limitOffset}, {$queryLimit}";
-
 			}
-			//limit offset undefined
+			// Without offset
 			else
 			{
-				//get the limit string
 				$limit = "LIMIT {$queryLimit}";
-
 			}
-
 		}
 
-		//return the formated query string in the format of $template
+		// Return complete query
 		return sprintf($template, $this->distinct, $fields, $this->froms, $join, $where, $order, $limit);
-
 	}
 
 	/**
-	 *This method builds the query string for inserting one row of records into the database.
-	 *@param array The row of data to be inserted in associative array
-	 *@param bool $set_timestamps Sets whether to fill the created_at and updated_at fields
-	 *@return string The formed insert query string
-	 *@throws This method does not throw an error
+	 * Build INSERT query string
+	 *
+	 * Constructs INSERT query for single row.
+	 * Optionally sets date_created timestamp.
+	 *
+	 * Query Template:
+	 *   INSERT INTO table (fields) VALUES (values)
+	 *
+	 * @param array $data Associative array of field => value pairs
+	 * @param bool $set_timestamps Whether to set date_created field
+	 * @return string Complete INSERT query
 	 */
 	protected function buildInsert($data, $set_timestamps)
 	{
-		//define a fields container array
-		$fields = array(); 
-
-		//define a values container array
+		$fields = array();
 		$values = array();
-
-		//define a template format for query
 		$template = "INSERT INTO %s (%s) VALUES (%s)";
 
-		//check if the $set_timestamp is true and add created_at fields
-		if($set_timestamps) $data['date_created'] = date('Y-m-d h:i:s');
-
-		//loop through the input data 
-		foreach ($data as $field => $value) 
+		// Add timestamp if requested
+		if($set_timestamps)
 		{
-			//populate the fields array
-			$fields[] = $field;
-
-			//populate the values array
-			$values[] = $this->quote($value);
-
+			$data['date_created'] = date('Y-m-d h:i:s');
 		}
 
-		//convert strings array to string
-		$fields = join(", ", $fields);
+		// Build fields and values
+		foreach ($data as $field => $value)
+		{
+			$fields[] = $field;
+			$values[] = $this->quote($value);
+		}
 
-		//convert values array to string
+		// Convert arrays to strings
+		$fields = join(", ", $fields);
 		$values = join(", ", $values);
 
-		//return the formated query string
+		// Return complete query
 		return sprintf($template, $this->froms, $fields, $values);
-
 	}
+
 	/**
-	 *This method builds the insert query for more than one row of data.
-	 *@param array The data to be inserted in associative array
-	 *@param bool $set_timestamps Sets whether to fill the created_at and updated_at fields
-	 *@return string The formed query string for this insert operation
-	 *@throws This method does not throw an error
+	 * Build bulk INSERT query string
+	 *
+	 * Constructs INSERT query for multiple rows.
+	 * More efficient than multiple single inserts.
+	 *
+	 * Query Template:
+	 *   INSERT INTO table (fields) VALUES (row1), (row2), (row3)
+	 *
+	 * @param array $data Multidimensional array of rows
+	 * @param bool $set_timestamps Whether to set date_created field
+	 * @return string Complete INSERT query
 	 */
 	protected function buildBulkInsert($data, $set_timestamps)
 	{
-		//define a fields container array
-		$fields = array(); 
-
-		//define a values container array
+		$fields = array();
 		$values = array();
-
-		//define a template format for query
 		$template = "INSERT INTO %s (%s) VALUES %s";
 
-		//get the fields array
+		// Get field names from first row
 		$fieldsArray = $data[0];
 
-		//get the fields
-		foreach ($fieldsArray as $field => $value) 
+		foreach ($fieldsArray as $field => $value)
 		{
-			//populate the fields array
 			$fields[] = $field;
-
 		}
-		//get the count of number of rows
+
+		// Get count of rows
 		$count = sizeof($data);
 
-		//loop through the input data composing input data
-		for ( $i = 0; $i < $count; $i++ ) 
-		{ 
-			//remove the first array and return
+		// Build values for each row
+		for ($i = 0; $i < $count; $i++)
+		{
 			$array = $data[$i];
-
-			//define array to contain the string components
 			$valuesArray = array();
 
-			//loop through the array composing the values
-			foreach ($array as $field => $value) 
+			// Quote each value
+			foreach ($array as $field => $value)
 			{
-				//populate the values array
 				$valuesArray[] = $this->quote($value);
-
 			}
 
-			//convert strings array to string
+			// Group row values in parentheses
 			$values[] = '(' . join(", ", $valuesArray) . ')';
-
 		}
 
-		//convert strings array to string
+		// Convert arrays to strings
 		$fields = join(", ", $fields);
-
-		//convert values array to string
 		$values = join(", ", $values);
 
-		//return the formated query string
+		// Return complete query
 		return sprintf($template, $this->froms, $fields, $values);
-
 	}
 
 	/**
-	 *This method builds an update query for a single record of data.
-	 *@param array The data to be updated into the database
-	 *@param bool $set_timestamps Sets whether to fill the created_at and updated_at fields
-	 *@return string The formed SQL query string for this update operation
-	 *@throws This method does not throw an error
+	 * Build UPDATE query string
+	 *
+	 * Constructs UPDATE query for single or multiple records.
+	 * Uses WHERE clause to target specific records.
+	 * Optionally sets date_modified timestamp.
+	 *
+	 * Query Template:
+	 *   UPDATE table SET field1=value1, field2=value2 WHERE conditions LIMIT n
+	 *
+	 * @param array $data Associative array of field => value pairs to update
+	 * @param bool $set_timestamps Whether to set date_modified field
+	 * @return string Complete UPDATE query
 	 */
 	protected function buildUpdate($data, $set_timestamps)
 	{
-		//define the parts container array
 		$parts = array();
-
-		//define the container vars initializing to empty
 		$where = $limit = '';
-
-		//define the template format string
 		$template = "UPDATE %s SET %s %s %s";
 
-		//check if the $set_timestamp is true and add update_at fields
-		if($set_timestamps) $data['date_modified'] = date('Y-m-d h:i:s');
-
-		//loop through the input data array, populating the parts array
-		foreach ($data as $field => $value) 
+		// Add timestamp if requested
+		if($set_timestamps)
 		{
-			//populate the parts array
-			$parts[] = "{$field}=" . $this->quote($value);
-
+			$data['date_modified'] = date('Y-m-d h:i:s');
 		}
 
-		//convert parts array into string
+		// Build SET clause
+		foreach ($data as $field => $value)
+		{
+			$parts[] = "{$field}=" . $this->quote($value);
+		}
+
+		// Convert to string
 		$parts = join(", ", $parts);
 
-		//get the where clause
+		// Build WHERE clause
 		$queryWhere = $this->wheres;
 
-		//check if where clause is empty
-		if ( ! empty($queryWhere) ) 
+		if (!empty($queryWhere))
 		{
-			//convert where clause array to string
 			$joined = join(" AND ", $queryWhere);
 
-			//set the where var valus
 			$where = "WHERE {$joined}";
-
 		}
 
-		//get the limits var value
+		// Build LIMIT clause
 		$queryLimit = $this->limits;
 
-		//check if the limit clause is empty
-		if ( ! empty($queryLimit) ) 
+		if (!empty($queryLimit))
 		{
-			//get the offset value
 			$limitOffset = $this->offset;
 
-			//compose limit string
 			$limit = "LIMIT {$queryLimit} {$limitOffset}";
-
 		}
 
-		//return the formated query string
+		// Return complete query
 		return sprintf($template, $this->froms, $parts, $where, $limit);
-
 	}
+
 	/**
-	 *This method builds the SQL query string for updating large amounts of data.
-	 *@param array The data to be updated in multidimensional array
-	 *@param array The field names to be updated in a numeric array
-	 *@param array The unique field ids to use for updating in numberic array
-	 *@return string The formed SQL update query string
-	 *@throws This method does not throw an error
+	 * Build bulk UPDATE query string
+	 *
+	 * Constructs UPDATE query for multiple records using CASE WHEN pattern.
+	 * Updates multiple rows with different values in a single query.
+	 *
+	 * Query Template:
+	 *   UPDATE table
+	 *   SET field1 = (CASE id WHEN 1 THEN 'value1' WHEN 2 THEN 'value2' END),
+	 *       field2 = (CASE id WHEN 1 THEN 'value3' WHEN 2 THEN 'value4' END)
+	 *   WHERE id IN (1, 2)
+	 *
+	 * @param array $data Multidimensional array indexed by ID
+	 * @param array $fields Field names to update
+	 * @param array $ids ID values for WHERE IN clause
+	 * @param string $key Primary key column name (e.g., 'id')
+	 * @return string Complete UPDATE query
 	 */
 	protected function buildBulkUpdate($data, $fields, $ids, $key)
 	{
-
-		//define the parts container array
 		$parts = array();
-
-		//define the template format string
 		$template = "UPDATE %s SET %s WHERE %s IN (%s) ";
 
-		//loop through the fields array composing the array
-		foreach ($fields as $index => $field ) 
+		// Build CASE WHEN for each field
+		foreach ($fields as $index => $field)
 		{
-			//initialize the subparts variable
+			// Start CASE statement
 			$subparts = $field . ' = (CASE ' . $key . ' ';
 
-			//loop through the data array composing parts
-			foreach ($data as $id => $info ) 
+			// Add WHEN clause for each ID
+			foreach ($data as $id => $info)
 			{
-	            //check if array is not empty 
-	            if ( ! empty($info) ) 
+	            if (!empty($info))
 	            {
-
 					$subparts .=  ' WHEN '. $id . ' THEN ' . $this->quote($info[$field]) . ' ';
-
 	            }
-
 			}
 
-			//finish the subpart
+			// End CASE statement
 			$subparts .= ' END) ';
 
-			//add this to the main parts array
 			$parts[] = $subparts;
-
 		}
 
-		//convert parts array into string
+		// Convert parts to string
 		$parts = join(", ", $parts);
 
-		//get the where clause
+		// Build WHERE IN clause
 		$queryWhere = $ids;
 
-		//check if where clause is empty
-		if ( ! empty($queryWhere) ) 
+		if (!empty($queryWhere))
 		{
-			//convert where clause array to string
 			$where = join(", ", $queryWhere);
-
 		}
 
-		//return the formated query string
+		// Return complete query
 		return sprintf($template, $this->froms, $parts, $key, $where);
-
 	}
 
 	/**
-	 *This method builds the SQL query string to perform a delete query.
-	 *@param null
-	 *@return string The SQL query string for delete operation.
-	 *@throws This method does not throw an error
+	 * Build DELETE query string
+	 *
+	 * Constructs DELETE query.
+	 * Uses WHERE clause to target specific records.
+	 *
+	 * Query Template:
+	 *   DELETE FROM table WHERE conditions LIMIT n
+	 *
+	 * @return string Complete DELETE query
 	 */
 	protected function buildDelete()
 	{
-		//initialize $where and $limit container vars to empty strings
 		$where = $limit = '';
-
-		//define the string formating template
 		$template = "DELETE FROM %s %s %s";
 
-		//get the where clause variable
+		// Build WHERE clause
 		$queryWhere = $this->wheres;
 
-		//check if where clause is empty
-		if ( ! empty($queryWhere) ) 
+		if (!empty($queryWhere))
 		{
-			//convert where clause array to string
 			$joined = join(" AND ", $queryWhere);
 
-			//compose the where string
 			$where = "WHERE {$joined}";
-
 		}
 
-		//get the limit clause variable
+		// Build LIMIT clause
 		$queryLimit = $this->limits;
 
-		//check if limit clause is empty
-		if ( ! empty($queryLimit) ) 
+		if (!empty($queryLimit))
 		{
-			//get the offset value
 			$limitOffset = $this->offset;
 
-			//compose the limit clause string
 			$limit = "LIMIT {$queryLimit} {$limitOffset}";
-
 		}
 
-		//return the formated query string
+		// Return complete query
 		return sprintf($template, $this->froms, $where, $limit);
-
 	}
 
+	// =========================================================================
+	// EXECUTION METHODS (Execute Queries)
+	// =========================================================================
+
 	/**
-	 *This methods inserts/updates one row of data into the database.
-	 *@param array The array containing the data to be inserted
-	 *@param bool $set_timestamps Sets whether to fill the created_at and updated_at fields
-	 *@return \MySQLResponseObject
-	 *@throws \MySQLException if there was an error in query execution
+	 * Execute INSERT or UPDATE query
+	 *
+	 * Determines whether to INSERT or UPDATE based on WHERE clause.
+	 * If WHERE clause is empty, performs INSERT.
+	 * If WHERE clause is set, performs UPDATE.
+	 *
+	 * @param array $data Data to insert/update
+	 * @param bool $set_timestamps Whether to set date_created/date_modified
+	 * @return MySQLResponseObject Response with insert ID or affected rows
+	 * @throws DatabaseException If query execution fails
 	 */
 	public function save($data, $set_timestamps)
 	{
-		//get the size of the wheres parameter
+		// Determine if this is insert or update
 		$doInsert = sizeof($this->wheres) == 0;
 
-		//check if doInsert is true, //get insert query string
-		if ( $doInsert ) $sql = $this->buildInsert($data, $set_timestamps);
+		// Build query
+		if ($doInsert)
+		{
+			$sql = $this->buildInsert($data, $set_timestamps);
+		}
+		else
+		{
+			$sql = $this->buildUpdate($data, $set_timestamps);
+		}
 
-		//not insert, this should be an update //get update query string
-		else $sql = $this->buildUpdate($data, $set_timestamps);
+		// Store query string in response object
+		$this->responseObject->setQueryString($sql);
 
-		//set the value of the query string
-		$this->responseObject
-			->setQueryString($sql);
-
-		//start timer
+		// Time the query execution
 		$query_start_time = microtime(true);
 
-		//excecute query
+		// Execute query
 		$result = $this->connector->execute($sql);
 
 		$query_stop_time = microtime(true);
 		$query_excec_time = $query_stop_time - $query_start_time;
 
-		$this->responseObject
-			->setQueryTime($query_excec_time);
+		// Store execution time
+		$this->responseObject->setQueryTime($query_excec_time);
 
-		//put this in try...catch block for better error handling
-		try{
-
-			//check if query execution failure
-			if ( $result === false) 
-			{
-				//throw exception 
-				throw new MySQLException(get_class(new MySQLException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-
-			}
-
-
-		}
-
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-		//if this was an insert, get the insert id
-		if( $doInsert )
+		try
 		{
-			$this->responseObject
-				->setLastInsertId($this->connector->lastInsertId());
+			// Check for query error
+			if ($result === false)
+			{
+				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
+			}
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
+		}
+
+		// Return response based on operation type
+		if($doInsert)
+		{
+			// INSERT - return insert ID
+			$this->responseObject->setLastInsertId($this->connector->lastInsertId());
 
 			return $this->responseObject;
 		}
-
-		else{
-
+		else
+		{
+			// UPDATE - return affected rows
 			$this->responseObject
 				->setUpdateSuccess(true)
 				->setAffectedRows($this->connector->affectedRows());
 
 			return $this->responseObject;
 		}
-
 	}
 
 	/**
-	 *The method perform insert/update of large amounts of data.
-	 *@param array The data to be inserted/updated in a multidimensional array
-	 *@param array The fields into which the data is to be inserted ot updated
-	 *@param array For update query, The unique id fields to use for updating
-	 *@param bool $set_timestamps Sets whether to fill the created_at and updated_at fields
-	 *@return \MySQLResponseObject
-	 *@throws \MySQLException if query execution return an error message
+	 * Execute bulk INSERT or UPDATE query
+	 *
+	 * Determines whether to INSERT or UPDATE based on WHERE clause.
+	 * More efficient than multiple save() calls.
+	 *
+	 * @param array $data Multidimensional array of records
+	 * @param array $fields Field names (for bulk update)
+	 * @param array $ids ID values (for bulk update)
+	 * @param string $key Primary key name (for bulk update)
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return MySQLResponseObject Response with insert ID or affected rows
+	 * @throws DatabaseException If query execution fails
 	 */
-	public function saveBulk($data, $fields = null , $ids = null, $key = null, $set_timestamps )
+	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps)
 	{
-		//get the size of the wheres parameter
+		// Determine if this is insert or update
 		$doInsert = sizeof($this->wheres) == 0;
 
-		//check if doInsert is true //get insert query string
-		if ( $doInsert ) $sql = $this->buildBulkInsert($data, $set_timestamps);
+		// Build query
+		if ($doInsert)
+		{
+			$sql = $this->buildBulkInsert($data, $set_timestamps);
+		}
+		else
+		{
+			$sql = $this->buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps);
+		}
 
-		//not insert, this should be an update, //get update query string
-		else $sql = $this->buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps);
+		// Store query string in response object
+		$this->responseObject->setQueryString($sql);
 
-		//set the value of the query string
-		$this->responseObject
-			->setQueryString($sql);
-
+		// Time the query execution
 		$query_start_time = microtime(true);
 
-		//excecute query
+		// Execute query
 		$result = $this->connector->execute($sql);
 
 		$query_stop_time = microtime(true);
 		$query_excec_time = $query_stop_time - $query_start_time;
-		$this->setQueryTime($query_excec_time);
 
-		//put this in try...catch block for better error handling
-		try{
+		// Store execution time (FIXED TYPO: was $this->setQueryTime)
+		$this->responseObject->setQueryTime($query_excec_time);
 
-			//check if query execution failure
-			if ( $result === false) 
-			{
-				//throw exception 
-				throw new MySQLException(get_class(new MySQLException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-	 
-			}
-
-		}
-
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-
-		//if this was an insert, get the insert id
-		if( $doInsert )
+		try
 		{
-			//set the insert id
-			$this->responseObject
-				->setLastInsertId($this->connector->lastInsertId());
+			// Check for query error
+			if ($result === false)
+			{
+				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
+			}
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
+		}
+
+		// Return response based on operation type
+		if($doInsert)
+		{
+			// INSERT - return insert ID
+			$this->responseObject->setLastInsertId($this->connector->lastInsertId());
 
 			return $this->responseObject;
 		}
-
-		else 
+		else
 		{
+			// UPDATE - return affected rows
 			$this->responseObject
 				->setUpdateSuccess(true)
 				->setAffectedRows($this->connector->affectedRows());
 
 			return $this->responseObject;
-
 		}
-
 	}
 
 	/**
-	 *This method deletes a set of rows that match the query parameters provided.
-	 *@param null
-	 *@return \MySQLResponseObject
-	 *@throws \MySQLException 
+	 * Execute DELETE query
+	 *
+	 * Deletes records matching WHERE conditions.
+	 *
+	 * @return MySQLResponseObject Response with affected rows count
+	 * @throws DatabaseException If query execution fails
 	 */
 	public function delete()
 	{
-		//build the delete query string
+		// Build DELETE query
 		$sql = $this->buildDelete();
 
-		//set the value of the query_string
+		// Store query string
 		$this->responseObject->setQueryString($sql);
 
-		//time query execution
+		// Time the query execution
 		$query_start_time = microtime(true);
 
-		//execute the query string
+		// Execute query
 		$result = $this->connector->execute($sql);
 
 		$query_stop_time = microtime(true);
 		$query_excec_time = $query_stop_time - $query_start_time;
+
+		// Store execution time
 		$this->responseObject->setQueryTime($query_excec_time);
 
-		//put this in try...catch block for better error handling
-		try{
-
-			//throw error if there was an error perfrorming this query
-			if ( $result === false ) 
+		try
+		{
+			// Check for query error
+			if ($result === false)
 			{
-				//throw excepton
-				throw new MySQLException(get_class(new MySQLException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-				
+				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
 			}
-			
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-
-		//if delete was successfull, get and return the number of affected rows
-		$this->responseObject
-			->setAffectedRows($this->connector->affectedRows());
+		// Return affected rows count
+		$this->responseObject->setAffectedRows($this->connector->affectedRows());
 
 		return $this->responseObject;
-
 	}
 
 	/**
-	 *This method returns the first row match in a query.
-	 *@param null
-	 *@return \MySQLResponseObject
-	 *@throws This method does not throw an error
+	 * Get first result from query
+	 *
+	 * Executes query with LIMIT 1 and returns first row.
+	 * Preserves original limit/offset settings.
+	 *
+	 * @return MySQLResponseObject Response with single result
 	 */
 	public function first()
 	{
-		//get the limit clause value
+		// Save original limit settings
 		$limit = $this->limits;
-
-		//get the offset value
 		$limitOffset = $this->offset;
 
-		//set the limit to 1
+		// Set limit to 1
 		$this->limit(1);
 
-		//get all
+		// Get all results (will be 1 row)
 		$all = $this->all();
 
-		//get the first
+		// Extract first result
 		$first = ArrayUtility::first($all->result_array())->get();
 
-		//if limit is defined
-		if ( $limit ) 
+		// Restore original limit settings
+		if ($limit)
 		{
-			//set the limit property
 			$this->limits = $limit;
-
 		}
 
-		//if limit offset is set
-		if ( $limitOffset ) 
+		if ($limitOffset)
 		{
-			//set the offset
 			$this->offset = $limitOffset;
-
 		}
 
-		//get the response object instance
-		$this->responseObject
-			->setResultArray($first);
+		// Store result in response object
+		$this->responseObject->setResultArray($first);
 
-		//return the full response object
 		return $this->responseObject;
-
 	}
 
 	/**
-	 *This method counts the number of rows returned by query.
-	 *@param null
-	 *@return \MySQLResponseObject
-	 *@throws This method does not throw an error
+	 * Count matching records
+	 *
+	 * Executes COUNT(1) query to get number of matching rows.
+	 * More efficient than fetching all rows and counting.
+	 *
+	 * @return MySQLResponseObject Response with row count
 	 */
 	public function count()
 	{
-		//get the limit clause value
+		// Save original query settings
 		$limit = $this->limits;
-
-		//get the offset value
 		$limitOffset = $this->offset;
-
-		//get the fields clause
 		$fields = $this->fields;
 
-		//compose the fields array
+		// Change to COUNT query
 		$this->fields = array($this->froms => array("COUNT(1)" => "rows"));
 
-		//set limit to 1
+		// Set limit to 1
 		$this->limit(1);
 
-		//get the first row
+		// Get count
 		$row = $this->first()->result_array();
 
-		//set the value of the fields
+		// Restore original field settings
 		$this->fields = $fields;
 
-		//check if fields is defined
-		if ( $fields ) 
+		if ($fields)
 		{
-			//set the value o fields
 			$this->fields = $fields;
-
 		}
 
-		//check if the limit value is set
-		if ( $limit ) 
+		// Restore original limit settings
+		if ($limit)
 		{
-			//set the value of limit
 			$this->limits = $limit;
-
 		}
 
-		//check if the limit offset value is defined
-		if ( $limitOffset ) 
+		if ($limitOffset)
 		{
-			//set the offset value
 			$this->offset = $limitOffset;
-
 		}
 
-		//get the response object instance
-		$this->responseObject 
+		// Store count in response object
+		$this->responseObject
 			->setNumRows($row[0]['rows'])
 			->setResultArray($row);
 
-		//return the full response object
 		return $this->responseObject;
-
 	}
 
 	/**
-	 *This method returns all rows that match the query parameters.
-	 *@param null
-	 *@return \MySQLResponseObject
-	 *@throws \MySQLException if query returned an error message string
+	 * Get all matching results
+	 *
+	 * Executes SELECT query and returns all matching rows.
+	 *
+	 * @return MySQLResponseObject Response with all results and metadata
+	 * @throws DatabaseException If query execution fails
 	 */
 	public function all()
 	{
-		//build the select query
+		// Build SELECT query
 		$sql = $this->buildSelect();
 
-		//set the value of the query string
+		// Store query string
 		$this->query_string = $sql;
 
-		//set the query excecution start time
+		// Time the query execution
 		$query_start_time = microtime(true);
 
-		//execute the sql query
+		// Execute query
 		$result = $this->connector->execute($sql);
 
-		//set the query excecution end time
 		$query_stop_time = microtime(true);
-
-		//get the query_excecution
 		$query_excec_time = $query_stop_time - $query_start_time;
 
-
-		//put this in try...catch block for better error handling
-		try{
-
-			//check if the query return an error and throw exception
-			if ( $result === false ) 
+		try
+		{
+			// Check for query error
+			if ($result === false)
 			{
-				//get the erro message
 				$error = $this->connector->lastError();
 
-				//throw exception
-				throw new MySQLException(get_class(new MySQLException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-
+				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
 			}
-			
+		}
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
 
-		//diplay error message
-		catch(MySQLException $MySQLExceptionObject){
-
-			//display error message
-			$MySQLExceptionObject->errorShow();
-
-		}
-
-
-		//define container rows() array
+		// Fetch all rows
 		$result_array = array();
 
-		//loop through resultset setting the values of arrays and objects
-		while ($row = $result->fetch_array(MYSQLI_ASSOC)) {
-
+		while ($row = $result->fetch_array(MYSQLI_ASSOC))
+		{
 			$result_array[] = $row;
-
 		}
 
-		//get the response object instance
+		// Store results and metadata in response object
 		$this->responseObject
 			->setQueryString($this->query_string)
 			->setQueryTime($query_excec_time)
@@ -1248,39 +1208,41 @@ class MySQLQuery {
 			->setQueryFields($result->fetch_fields())
 			->setResultArray($result_array);
 
-		//return the full response object
 		return $this->responseObject;
 	}
 
 	/**
-	 *This method executes a raw query in the database.
-	 *@param string $query_string The query string to execute
-	 *@return \MySQLResponseObject
-	 *@throws \MySQLException if query returned an error message string
+	 * Execute raw SQL query
+	 *
+	 * Executes custom SQL when query builder is insufficient.
+	 * Use for complex queries, stored procedures, etc.
+	 *
+	 * WARNING: Ensure proper escaping to prevent SQL injection!
+	 *
+	 * @param string $query_string SQL query to execute
+	 * @return mixed Query result or response object
+	 * @throws DatabaseException If query execution fails
 	 */
 	public function rawQuery($query_string)
 	{
-		try{
-			//execute the sql query and return response object
+		try
+		{
+			// Execute query
 		 	$result = $this->connector->execute($query_string);
 
-			//check if the query return an error and throw exception
-			if ( $result === false ) 
+			// Check for query error
+			if ($result === false)
 			{
-				//throw exception
-				throw new MySQLException(get_class(new MySQLException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $query_string . ') </span>');
-
+				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $query_string . ') </span>');
 			}
-
-			else return $result;
-
+			else
+			{
+				return $result;
+			}
 		}
-
-		catch(MySQLException $MySQLExceptionObject){
-
-			$MySQLExceptionObject->errorShow();
+		catch(DatabaseException $DatabaseExceptionObject)
+		{
+			$DatabaseExceptionObject->errorShow();
 		}
-
 	}
-	
 }
