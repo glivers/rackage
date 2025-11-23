@@ -1,81 +1,180 @@
 <?php namespace Rackage;
 
 /**
- *This trait with magic class provide getters and setters for the base controller class
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Rackage
- *@package Rackage\Drivers\Controllers
- *@link https://github.com/glivers/rackage
- *@license http://opensource.org/licenses/MIT MIT License
- *@version 2.0.1
+ * Base Controller Class
+ *
+ * All application controllers extend this base class.
+ * Provides HTTP verb routing, request timing, and framework property access.
+ *
+ * Usage:
+ *
+ *   In Application Controllers:
+ *     <?php namespace Controllers;
+ *
+ *     use Rackage\Controller;
+ *
+ *     class HomeController extends Controller {
+ *         public function getIndex() {
+ *             // GET request handler
+ *         }
+ *
+ *         public function postIndex() {
+ *             // POST request handler
+ *         }
+ *     }
+ *
+ * HTTP Verb Routing:
+ *   The __call() magic method enables automatic HTTP verb-based routing.
+ *   Methods can be prefixed with HTTP verbs for RESTful routing:
+ *
+ *   - getMethodName()    Handles GET requests
+ *   - postMethodName()   Handles POST requests
+ *   - putMethodName()    Handles PUT requests
+ *   - deleteMethodName() Handles DELETE requests
+ *   - patchMethodName()  Handles PATCH requests
+ *   - methodName()       Fallback for any HTTP method
+ *
+ * Available Properties:
+ *   $this->request_start_time  Request start timestamp
+ *   $this->site_title          Application title from config
+ *   $this->settings            Quick access to all settings
+ *
+ * Available Methods:
+ *   $this->_requestExecutionTime()  Get request execution time in seconds
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Controller
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.2
  */
 
 use Rackage\Registry;
 
-class  Controller {
+class Controller
+{
 
-	/**
-	*@var float The request start time
-	*/
-	public $request_start_time;
+    /**
+     * Request start time (microtime)
+     * @var float
+     */
+    public $request_start_time;
 
-	/**
-	*@var string The site title as defined in the config
-	*/
-	public $site_title;
+    /**
+     * Site title from config/settings.php
+     * @var string
+     */
+    public $site_title;
 
-	/**
-	 *This magic method determines the request method and composes a method based on the value.
-	 *It checks to see if the method exists
-	 *
-	 *@param string $method The method name to compose
-	 *@param array $param The parameters passed to this function
-	 *@return sting||(bool)false Return named method or false in boolean failure
-	 */
+    /**
+     * Application settings (quick access to Registry::settings())
+     * @var array
+     */
+    public $settings;
 
-	public function __call($method, $param = null)
-	{
-		$prefix = ($_SERVER['REQUEST_METHOD'] == 'GET') ? 'get' : 'post';
+    /**
+     * Magic method for HTTP verb-based method routing
+     *
+     * Determines the request method (GET, POST, PUT, DELETE, PATCH) and composes
+     * a method name by prefixing the requested method with the HTTP verb.
+     *
+     * Examples:
+     *   GET /user/profile → getProfile()
+     *   POST /user/profile → postProfile()
+     *   PUT /user/profile → putProfile()
+     *   DELETE /user/profile → deleteProfile()
+     *   PATCH /user/profile → patchProfile()
+     *
+     * If the prefixed method doesn't exist, returns false and the router
+     * will fall back to the unprefixed method (e.g., profile()).
+     *
+     * @param string $method The method name to compose
+     * @param array $param The parameters passed to this function
+     * @return string|false Return prefixed method name or false if not found
+     */
+    public function __call($method, $param = null)
+    {
+        // Get HTTP request method
+        $requestMethod = $_SERVER['REQUEST_METHOD'];
 
-		$method = $prefix . ucwords($method);
-		
-		//check of this method exists and return method name, else return false
-		if (method_exists($this, $method)) return $method;
-		else return false;
+        // Map HTTP verbs to method prefixes
+        $prefix = match($requestMethod) {
+            'GET' => 'get',
+            'POST' => 'post',
+            'PUT' => 'put',
+            'DELETE' => 'delete',
+            'PATCH' => 'patch',
+            default => 'post',  // Fallback for other methods (HEAD, OPTIONS, etc.)
+        };
 
-	}
+        // Compose prefixed method name (e.g., 'get' + 'Profile' = 'getProfile')
+        $prefixedMethod = $prefix . ucwords($method);
 
-	/**
-	*this method sets the basic app properties in controller
-	*
-	*@param null
-	*@return \Object $this instance of the controller for the purposes of chaining
-	*/
-	public function set_rachie_fr_controller_trait_properties()
-	{
-		//set the request_start_time
-		$this->request_start_time = Registry::$rachie_app_start;
+        // Check if prefixed method exists and return it, otherwise return false
+        if (method_exists($this, $prefixedMethod)) {
+            return $prefixedMethod;
+        }
 
-		//set the site title
-		$this->site_title = Registry::settings()['title'];
+        return false;
+    }
 
-		//return this object instance
-		return $this;
+    /**
+     * Initialize framework properties
+     *
+     * Sets up essential framework properties in the controller.
+     * Called automatically by the router before controller method execution.
+     *
+     * Properties set:
+     *   - request_start_time: Timestamp when request started (for performance tracking)
+     *   - site_title: Application title from config/settings.php
+     *   - settings: Complete settings array for quick access
+     *
+     * Note: Prefixed with underscore to avoid conflicts with developer-defined methods.
+     *
+     * @return $this Controller instance for method chaining
+     */
+    public function _setRachieProperties()
+    {
+        // Set request start time for performance tracking
+        $this->request_start_time = Registry::$rachie_app_start;
 
-	}
+        // Set site title from configuration
+        $this->site_title = Registry::settings()['title'];
 
-	/**
-	*This method returns the current request execution time
-	*
-	*@param null
-	*@return float The duration of the request up to the point where this method is called
-	*/
-	public function request_exec_time()
-	{
-		//return the time different
-		return microtime(true) - $this->request_start_time;
-		
-	}
+        // Set settings for quick access
+        $this->settings = Registry::settings();
 
+        // Return instance for chaining
+        return $this;
+    }
+
+    /**
+     * Get request execution time
+     *
+     * Returns the duration in seconds from when the request started
+     * to when this method is called. Useful for performance monitoring.
+     *
+     * Examples:
+     *   // In controller method
+     *   $time = $this->_requestExecutionTime();  // 0.0234 (seconds)
+     *
+     *   // Format for display
+     *   $ms = number_format($this->_requestExecutionTime() * 1000, 2);
+     *   echo "Page generated in {$ms}ms";
+     *
+     *   // Pass to view for debug footer
+     *   View::with([
+     *       'execution_time' => $this->_requestExecutionTime()
+     *   ])->render('page');
+     *
+     * Note: Prefixed with underscore to avoid conflicts with developer-defined methods.
+     *
+     * @return float Duration in seconds (with microsecond precision)
+     */
+    public function _requestExecutionTime()
+    {
+        return microtime(true) - $this->request_start_time;
+    }
 }
