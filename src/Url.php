@@ -1,170 +1,203 @@
 <?php namespace Rackage;
 
 /**
- *This class resolves urls and returns the appropriate url string required
+ * URL Helper
  *
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright Copyright (c) 2015 - 2030 Geoffrey Okongo
- *@link https://github.com/gliverphp/framework
- *@category Rackage
- *@package Rackage\Url
+ * Generates application URLs, asset URLs, and links with proper protocol
+ * and base path handling. Automatically detects installation directory
+ * and respects protocol configuration.
  *
+ * Static Design:
+ *   All methods are static - no instance creation required.
+ *   Uses Registry to access configuration and request data.
+ *
+ * Configuration:
+ *   - protocol: 'auto', 'http', or 'https' (from settings.php)
+ *   - url_separator: '/' or '.' (for link generation)
+ *
+ * Common Use Cases:
+ *   - Generate base URL: Url::base()
+ *   - Link to assets: Url::assets('css/style.css')
+ *   - Create routes: Url::link('user', '123', 'edit')
+ *   - Safe URLs with encoding: Url::safe('search', $userInput)
+ *
+ * Examples:
+ *   // In views
+ *   <link href="{{ Url::assets('css/app.css') }}" rel="stylesheet">
+ *   <a href="{{ Url::link('blog', $post->slug) }}">Read More</a>
+ *
+ *   // In controllers
+ *   redirect(Url::link('dashboard'));
+ *
+ *   // With user input (auto-encodes)
+ *   redirect(Url::safe('search', $_GET['query']));
+ *
+ * Security Note:
+ *   - link() does NOT escape parameters - use for trusted data
+ *   - safe() URL-encodes parameters - use for user input
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Url
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.1
  */
 
-use Rackage\ArrayHelper\ArrayHelper;
 use Rackage\Registry;
 
 class Url {
 
 	/**
-	 *This is the constructor class. We make this private to avoid creating instances of
-	 *this object
+	 * Private constructor to prevent instantiation
 	 *
-	 *@param null
-	 *@return void
+	 * @return void
 	 */
 	private function __construct(){}
 
 	/**
-	 *This method stops creation of a copy of this object by making it private
+	 * Prevent cloning
 	 *
-	 *@param null
-	 *@return void
-	 *
+	 * @return void
 	 */
 	private function __clone(){}
 
 	/**
-	 *This method returns the base url
+	 * Build base URL from server variables and configuration
 	 *
-	 *@param null
-	 *@return string $url the base url for this application
-	 *@throws this method does not throw an error
+	 * Constructs the base URL including protocol and installation directory.
+	 * Respects protocol configuration or auto-detects from server.
 	 *
+	 * @return string Base URL without trailing slash
+	 */
+	private static function buildBaseUrl()
+	{
+		$base = $_SERVER['SERVER_NAME'];
+		$url = Registry::url();
+
+		if (!empty($url)) {
+			$base .= substr($_SERVER['REQUEST_URI'], 0, strpos($_SERVER['REQUEST_URI'], Registry::url()));
+		} else {
+			$base .= substr($_SERVER['REQUEST_URI'], 0);
+		}
+
+		// Determine protocol
+		$settings = Registry::settings();
+		$configProtocol = $settings['protocol'] ?? 'auto';
+
+		if ($configProtocol === 'auto') {
+			// Auto-detect from server
+			$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != "off") ? "https" : "http";
+		} else {
+			// Use configured protocol
+			$protocol = $configProtocol;
+		}
+
+		return $protocol . '://' . $base;
+	}
+
+	/**
+	 * Get base URL of the application
+	 *
+	 * Returns the root URL including protocol and installation directory.
+	 *
+	 * Examples:
+	 *   Url::base()  // https://example.com/myapp/
+	 *
+	 * @return string Base URL
 	 */
 	public static function base()
 	{
-
-		//get the server name from global $_SERVER[] array()
-		$base  = $_SERVER['SERVER_NAME']; 
-
-		$url = Registry::url();
-
-		//check if there is a uri string
-		if ( ! empty($url) ) 
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
-
-		}
-		//there is no query string, 
-		else
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0);
-
-		}
-
-    	//use https if its defined in the $_SERVER global variable
-    	$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != "off") ? "https" : "http";
-
-		//compose the url string
-		return $protocol . '://' . $base;
-
+		return self::buildBaseUrl();
 	}
 
 	/**
-	 *This method returns the assets url
+	 * Get URL to asset file in public directory
 	 *
-	 *@param null
-	 *@return string $url the assets url for this application
-	 *@throws this method does not throw an error
+	 * Generates full URL to assets (CSS, JS, images) in public/ folder.
 	 *
+	 * Examples:
+	 *   Url::assets('css/style.css')      // https://example.com/public/css/style.css
+	 *   Url::assets('images/logo.png')    // https://example.com/public/images/logo.png
+	 *
+	 * @param string|null $assetName Path to asset relative to public/
+	 * @return string Full URL to asset
 	 */
 	public static function assets($assetName = null)
 	{
-		//get the server name from global $_SERVER[] array()
-		$base  = $_SERVER['SERVER_NAME']; 
-
-		$url = Registry::url();
-
-		//check if there is a uri string
-		if ( ! empty($url) ) 
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
-
-		}
-		//there is no query string, 
-		else
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0);
-
-		}
-
-
-    	//use https if its defined in the $_SERVER global variable
-    	$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != "off") ? "https" : "http";
-
-		//compose the url string
-		return $protocol . '://' . $base . 'public/' . $assetName;
-
+		return self::buildBaseUrl() . 'public/' . ltrim($assetName, '/');
 	}
 
 	/**
-	 * This method returns the url string.
-	 * @param mixed $linkParams The params to add to the link to generate
-	 * @return string $url the base url for this application
-	 * @throws this method does not throw an error
+	 * Generate application URL with parameters
+	 *
+	 * Creates URLs for routing within the application using configured separator.
+	 * Accepts array or variadic arguments. Does NOT encode parameters.
+	 *
+	 * Examples:
+	 *   Url::link('user', '123', 'edit')        // https://example.com/user/123/edit
+	 *   Url::link(['blog', 'post', 'my-slug'])  // https://example.com/blog/post/my-slug
+	 *   Url::link()                             // https://example.com/
+	 *
+	 * Security:
+	 *   Parameters are NOT URL-encoded. Use safe() for user input.
+	 *
+	 * @param mixed ...$linkParams URL segments (array or variadic args)
+	 * @return string Full application URL
 	 */
-	public static function link($linkParams = null)
+	public static function link(...$linkParams)
 	{
-		if($linkParams === null){
+		$base = self::buildBaseUrl();
 
-			$link_params = null;
+		// Handle no parameters
+		if (empty($linkParams)) {
+			return $base;
 		}
 
-		elseif(is_array($linkParams)){
-
-			$link_params = join(Registry::settings()['url_component_separator'], $linkParams);
-		
+		// Handle single array argument
+		if (count($linkParams) === 1 && is_array($linkParams[0])) {
+			$linkParams = $linkParams[0];
 		}
 
-		else{
+		// Join with configured separator
+		$settings = Registry::settings();
+		$separator = $settings['url_component_separator'] ?? '/';
+		$path = implode($separator, $linkParams);
 
-			$params = func_get_args();
-			$link_params = join(Registry::settings()['url_component_separator'], $params);
-		}
-
-		//get the server name from global $_SERVER[] array()
-		$base  = $_SERVER['SERVER_NAME']; 
-
-		$url = Registry::url();
-
-		//check if there is a uri string
-		if ( ! empty($url) ) 
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0,  strpos($_SERVER['REQUEST_URI'], Registry::url()));
-
-		}
-		//there is no query string, 
-		else
-		{
-			//prepend installation folder to server name
-			$base .= substr($_SERVER['REQUEST_URI'], 0);
-
-		}
-
-    	//use https if its defined in the $_SERVER global variable
-    	$protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != "off") ? "https" : "http";
-
-		//compose the url string
-		return $protocol . '://' . $base . $link_params;
-
+		return $base . ltrim($path, '/');
 	}
 
+	/**
+	 * Generate safe URL with encoded parameters
+	 *
+	 * Like link() but URL-encodes all parameters to prevent XSS and broken URLs.
+	 * Use when parameters come from user input or contain special characters.
+	 *
+	 * Examples:
+	 *   Url::safe('search', $_GET['query'])     // Encodes query parameter
+	 *   Url::safe('user', 'john doe')           // Encodes space to %20
+	 *   Url::safe(['blog', '../admin'])         // Prevents path traversal
+	 *
+	 * Security:
+	 *   All parameters are passed through urlencode() for safety.
+	 *
+	 * @param mixed ...$linkParams URL segments to encode (array or variadic args)
+	 * @return string Full URL with encoded parameters
+	 */
+	public static function safe(...$linkParams)
+	{
+		// Handle single array argument
+		if (count($linkParams) === 1 && is_array($linkParams[0])) {
+			$linkParams = $linkParams[0];
+		}
 
-	
+		// Encode all parameters
+		$escaped = array_map(function($param) {
+			return urlencode($param);
+		}, $linkParams);
+
+		return self::link($escaped);
+	}
+
 }
