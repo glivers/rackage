@@ -53,8 +53,9 @@
  * @version 2.0.1
  */
 
-use Rackage\Registry;
 use Rackage\Path;
+use Rackage\Cache;
+use Rackage\Registry;
 use Rackage\Templates\Template;
 use Rackage\Templates\TemplateException;
 
@@ -235,6 +236,8 @@ class View {
      * Extracts variables, compiles template (if enabled), writes to temp file,
      * includes it, then cleans up.
      *
+     * If page caching is enabled, captures output and stores in cache.
+     *
      * @param string $fileName View file path
      * @param array $data Variables to pass to view
      * @param int $status HTTP status code
@@ -274,10 +277,31 @@ class View {
                 $contents = self::getHeaderContent() . file_get_contents($filePath);
             }
 
-            // Write to temp file, include, and clean up
+            // Write to temp file
             $file_write_path = $tmpDir . uniqid('view_', true) . '.php';
             file_put_contents($file_write_path, $contents);
+
+            // Check if Router decided this page should be cached
+            $shouldCache = self::shouldCache();
+
+            // Start output buffering if caching is enabled
+            if ($shouldCache)
+            {
+                ob_start();
+            }
+
+            // Include and render
             include $file_write_path;
+
+            // Store in cache if needed
+            if ($shouldCache)
+            {
+                $output = ob_get_contents();
+                ob_end_flush();
+                self::storeCache($output);
+            }
+
+            // Clean up temp file
             unlink($file_write_path);
 
             // Clear variables after rendering
@@ -349,6 +373,40 @@ class View {
         http_response_code($status);
         header('Content-Type: application/json');
         echo json_encode($data);
+    }
+
+    // ===========================================================================
+    // CACHE HANDLING
+    // ===========================================================================
+
+    /**
+     * Check if current page should be cached
+     *
+     * Reads decision made by Router and stored in Registry.
+     * Extracted as separate method to allow future customization
+     * without polluting renderView() method.
+     *
+     * @return bool True if page should be cached
+     */
+    private static function shouldCache()
+    {
+        return Registry::shouldCache();
+    }
+
+    /**
+     * Store rendered page output in cache
+     *
+     * @param string $output Rendered HTML output
+     * @return void
+     */
+    private static function storeCache($output)
+    {
+        $cacheConfig = Registry::cache();
+        $requestUri = Registry::url();
+        $cacheKey = 'page:' . md5($requestUri);
+        $lifetime = $cacheConfig['lifetime'] / 60;
+
+        Cache::set($cacheKey, $output, $lifetime);
     }
 
 }
