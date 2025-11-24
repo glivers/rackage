@@ -454,7 +454,6 @@ class Session {
      * Get flash value
      *
      * Retrieves flash data. Flash is automatically removed after current request.
-     * Use Session::get() normally - flash data is merged with regular data.
      *
      * Example:
      *   $message = Session::getFlash('success');
