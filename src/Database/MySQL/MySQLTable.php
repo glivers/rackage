@@ -14,7 +14,7 @@
 use Rackage\Path;
 use Rackage\File\FileInfo;
 use Rackage\File\FileHandler;
-use Rackage\Database\MySQL\MySQLResponseObject;
+use Rackage\Database\MySQL\MySQLResponse;
 use Rackage\Database\DatabaseException;
 
 class MySQLTable {

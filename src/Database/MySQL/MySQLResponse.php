@@ -6,13 +6,13 @@
  *@author Geoffrey Okongo <code@rachie.dev>
  *@copyright 2015 - 2030 Geoffrey Okongo
  *@category Rackage\Database
- *@package Rackage\Database\MySQL\MySQLResponseObject
+ *@package Rackage\Database\MySQL\MySQLResponse
  *@link https://github.com/glivers/rackage
  *@license http://opensource.org/licenses/MIT MIT License
  *@version 2.0.1
  */
 
-class MySQLResponseObject {
+class MySQLResponse {
 
 	/**
 	*@var string The query string that was excecuted

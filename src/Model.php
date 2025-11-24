@@ -394,7 +394,7 @@ class Model
 	 *   - date_modified on update
 	 *
 	 * @param array $data Associative array of column => value pairs
-	 * @return MySQLResponseObject Response object with insert ID, affected rows, etc.
+	 * @return MySQLResponse Response object with insert ID, affected rows, etc.
 	 */
 	final public static function save($data)
 	{
@@ -439,7 +439,7 @@ class Model
 	 * @param array $fields Column names (optional)
 	 * @param array $ids ID columns for updates (optional)
 	 * @param mixed $key Primary key name (optional)
-	 * @return MySQLResponseObject Response object
+	 * @return MySQLResponse Response object
 	 */
 	final public static function saveBulk($data, $fields = null, $ids = null, $key = null)
 	{
@@ -468,7 +468,7 @@ class Model
 	 *   ]);
 	 *
 	 * @param array $data Data array with 'id' key
-	 * @return MySQLResponseObject Response object
+	 * @return MySQLResponse Response object
 	 * @throws ModelException If 'id' field not found or data is empty
 	 */
 	final public static function saveById($data)
@@ -530,7 +530,7 @@ class Model
 	 *
 	 * WARNING: Without WHERE clause, deletes ALL records!
 	 *
-	 * @return MySQLResponseObject Response object with affected rows count
+	 * @return MySQLResponse Response object with affected rows count
 	 */
 	final public static function delete()
 	{
@@ -555,7 +555,7 @@ class Model
 	 *   Users::deleteById($userId);
 	 *
 	 * @param int $id Record ID to delete
-	 * @return MySQLResponseObject Response object
+	 * @return MySQLResponse Response object
 	 */
 	final public static function deleteById($id)
 	{
@@ -790,7 +790,7 @@ class Model
 	 * WARNING: Ensure proper escaping to prevent SQL injection!
 	 *
 	 * @param string $query_string SQL query string
-	 * @return MySQLResponseObject Response object
+	 * @return MySQLResponse Response object
 	 * @throws DatabaseException If query error occurs
 	 */
 	final public static function rawQuery($query_string)
@@ -832,5 +832,578 @@ class Model
 	final public static function updateTable()
 	{
 		return (new MySQLTable(static::$table, get_called_class(), Registry::get('database')))->updateTable();
+	}
+
+	// =========================================================================
+	// CORE 12 FEATURES - Advanced Query Builder Methods
+	// =========================================================================
+
+	/**
+	 * Add GROUP BY clause
+	 *
+	 * Groups results by one or more columns.
+	 * Typically used with aggregate functions (COUNT, SUM, AVG, etc.).
+	 *
+	 * Examples:
+	 *   Posts::groupBy('category')->all();
+	 *   Posts::groupBy('year', 'month')->all();
+	 *
+	 * @param string ...$columns Column names to group by
+	 * @return object Query instance (chainable)
+	 */
+	final public static function groupBy(...$columns)
+	{
+		return static::Query()->groupBy(...$columns);
+	}
+
+	/**
+	 * Add HAVING clause
+	 *
+	 * Filters grouped results (like WHERE but for GROUP BY).
+	 * Must be used with groupBy().
+	 *
+	 * Examples:
+	 *   Posts::groupBy('author_id')->having('COUNT(*) > ?', 5)->all();
+	 *
+	 * @param mixed ...$arguments Variadic arguments (condition, value pairs)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function having(...$arguments)
+	{
+		return static::Query()->having(...$arguments);
+	}
+
+	/**
+	 * Add INNER JOIN clause
+	 *
+	 * Joins another table and returns only matching records from both tables.
+	 *
+	 * Examples:
+	 *   Posts::innerJoin('users', 'posts.user_id = users.id', ['users.name'])->all();
+	 *
+	 * @param string $table Table to join
+	 * @param string $condition Join condition
+	 * @param array $fields Fields to select from joined table
+	 * @return object Query instance (chainable)
+	 */
+	final public static function innerJoin($table, $condition, $fields = array("*"))
+	{
+		return static::Query()->innerJoin($table, $condition, $fields);
+	}
+
+	/**
+	 * Add OR WHERE clause
+	 *
+	 * Adds WHERE conditions with OR operator instead of AND.
+	 *
+	 * Examples:
+	 *   Posts::where('status', 'published')->orWhere('status', 'featured')->all();
+	 *
+	 * @param mixed ...$arguments Variadic arguments (condition, value pairs)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function orWhere(...$arguments)
+	{
+		return static::Query()->orWhere(...$arguments);
+	}
+
+	/**
+	 * Add WHERE IN clause
+	 *
+	 * Checks if column value matches any value in an array.
+	 *
+	 * Examples:
+	 *   Posts::whereIn('id', [1, 2, 3, 4, 5])->all();
+	 *   Posts::whereIn('status', ['draft', 'pending'])->all();
+	 *
+	 * @param string $column Column name
+	 * @param array $values Array of values to match
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereIn($column, $values)
+	{
+		return static::Query()->whereIn($column, $values);
+	}
+
+	/**
+	 * Add WHERE NOT IN clause
+	 *
+	 * Checks if column value does NOT match any value in an array.
+	 *
+	 * Examples:
+	 *   Posts::whereNotIn('status', ['deleted', 'banned'])->all();
+	 *
+	 * @param string $column Column name
+	 * @param array $values Array of values to exclude
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereNotIn($column, $values)
+	{
+		return static::Query()->whereNotIn($column, $values);
+	}
+
+	/**
+	 * Add WHERE BETWEEN clause
+	 *
+	 * Checks if column value falls within a range (inclusive).
+	 *
+	 * Examples:
+	 *   Posts::whereBetween('age', 18, 65)->all();
+	 *   Posts::whereBetween('created_at', '2024-01-01', '2024-12-31')->all();
+	 *
+	 * @param string $column Column name
+	 * @param mixed $min Minimum value (inclusive)
+	 * @param mixed $max Maximum value (inclusive)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereBetween($column, $min, $max)
+	{
+		return static::Query()->whereBetween($column, $min, $max);
+	}
+
+	/**
+	 * Add WHERE LIKE clause
+	 *
+	 * Performs pattern matching on column values.
+	 *
+	 * Examples:
+	 *   Posts::whereLike('title', 'WordPress%')->all();
+	 *   Posts::whereLike('email', '%@gmail.com')->all();
+	 *
+	 * @param string $column Column name
+	 * @param string $pattern Pattern to match (with % or _ wildcards)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereLike($column, $pattern)
+	{
+		return static::Query()->whereLike($column, $pattern);
+	}
+
+	/**
+	 * Add WHERE NOT LIKE clause
+	 *
+	 * Performs pattern exclusion on column values.
+	 *
+	 * Examples:
+	 *   Posts::whereNotLike('email', '%spam.com')->all();
+	 *
+	 * @param string $column Column name
+	 * @param string $pattern Pattern to exclude
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereNotLike($column, $pattern)
+	{
+		return static::Query()->whereNotLike($column, $pattern);
+	}
+
+	/**
+	 * Add WHERE NULL clause
+	 *
+	 * Checks if column value is NULL.
+	 *
+	 * Examples:
+	 *   Posts::whereNull('deleted_at')->all();
+	 *
+	 * @param string $column Column name
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereNull($column)
+	{
+		return static::Query()->whereNull($column);
+	}
+
+	/**
+	 * Add WHERE NOT NULL clause
+	 *
+	 * Checks if column value is NOT NULL.
+	 *
+	 * Examples:
+	 *   Posts::whereNotNull('published_at')->all();
+	 *
+	 * @param string $column Column name
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereNotNull($column)
+	{
+		return static::Query()->whereNotNull($column);
+	}
+
+	/**
+	 * Increment a column value
+	 *
+	 * Increases a numeric column by specified amount (default: 1).
+	 *
+	 * Examples:
+	 *   Posts::where('id', 123)->increment('views');
+	 *   Posts::where('id', 456)->increment('votes', 5);
+	 *
+	 * @param string $column Column name to increment
+	 * @param int $amount Amount to increment by (default: 1)
+	 * @return MySQLResponse Query execution result
+	 */
+	final public static function increment($column, $amount = 1)
+	{
+		return static::Query()->increment($column, $amount);
+	}
+
+	/**
+	 * Decrement a column value
+	 *
+	 * Decreases a numeric column by specified amount (default: 1).
+	 *
+	 * Examples:
+	 *   Posts::where('id', 123)->decrement('stock');
+	 *   Posts::where('id', 456)->decrement('credits', 10);
+	 *
+	 * @param string $column Column name to decrement
+	 * @param int $amount Amount to decrement by (default: 1)
+	 * @return MySQLResponse Query execution result
+	 */
+	final public static function decrement($column, $amount = 1)
+	{
+		return static::Query()->decrement($column, $amount);
+	}
+
+	/**
+	 * Add FULLTEXT search clause
+	 *
+	 * Performs full-text search on columns with FULLTEXT index.
+	 *
+	 * Examples:
+	 *   Posts::whereFulltext(['title', 'content'], 'WordPress tutorial')->all();
+	 *   Posts::whereFulltext(['body'], '+MySQL -Oracle', 'boolean')->all();
+	 *
+	 * @param array $columns Array of column names with FULLTEXT index
+	 * @param string $search Search query string
+	 * @param string $mode Search mode: 'natural', 'boolean', 'expansion'
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereFulltext($columns, $search, $mode = 'natural')
+	{
+		return static::Query()->whereFulltext($columns, $search, $mode);
+	}
+
+	/**
+	 * Execute raw query with parameter binding
+	 *
+	 * Executes a raw SQL query with safe parameter binding.
+	 *
+	 * Examples:
+	 *   Posts::rawQueryWithBinding('SELECT * FROM posts WHERE age > ? AND status = ?', 18, 'active');
+	 *
+	 * @param string $query SQL query with ? placeholders
+	 * @param mixed ...$params Values to bind (variadic)
+	 * @return MySQLResponse Query execution result
+	 */
+	final public static function rawQueryWithBinding($query, ...$params)
+	{
+		return static::Query()->rawQueryWithBinding($query, ...$params);
+	}
+
+	/**
+	 * Begin database transaction
+	 *
+	 * Starts a transaction to group multiple queries atomically.
+	 *
+	 * Example:
+	 *   Posts::transaction();
+	 *   Posts::save(['title' => 'New Post']);
+	 *   Posts::commit(); // or Posts::rollback();
+	 *
+	 * @return bool True on success
+	 */
+	final public static function transaction()
+	{
+		return static::Query()->transaction();
+	}
+
+	/**
+	 * Commit database transaction
+	 *
+	 * Saves all changes made during the transaction.
+	 *
+	 * Example:
+	 *   Posts::transaction();
+	 *   // ... multiple queries ...
+	 *   Posts::commit();
+	 *
+	 * @return bool True on success
+	 */
+	final public static function commit()
+	{
+		return static::Query()->commit();
+	}
+
+	/**
+	 * Rollback database transaction
+	 *
+	 * Cancels all changes made during the transaction.
+	 *  
+	 * Example:
+	 *   Posts::transaction();
+	 *   try {
+	 *       // ... queries ...
+	 *       Posts::commit();
+	 *   } catch (Exception $e) {
+	 *       Posts::rollback();
+	 *   }
+	 *
+	 * @return bool True on success
+	 */
+	final public static function rollback()
+	{
+		return static::Query()->rollback();
+	}
+
+	// =========================================================================
+	// SHOULD HAVE FEATURES - Convenience Methods
+	// =========================================================================
+
+	/**
+	 * Extract single column values as array
+	 *
+	 * Returns a flat array of values from a single column.
+	 *
+	 * Examples:
+	 *   Posts::pluck('id');
+	 *   Posts::where('status', 'published')->pluck('title');
+	 *
+	 * @param string $column Column name to extract
+	 * @return array Flat array of column values
+	 */
+	final public static function pluck($column)
+	{
+		return static::Query()->pluck($column);
+	}
+
+	/**
+	 * Check if any records exist
+	 *
+	 * Returns true if at least one record matches the query.
+	 *
+	 * Examples:
+	 *   Posts::exists();
+	 *   Posts::where('email', 'test@example.com')->exists();
+	 *
+	 * @return bool True if records exist, false otherwise
+	 */
+	final public static function exists()
+	{
+		return static::Query()->exists();
+	}
+
+	/**
+	 * Filter by date component (day)
+	 *
+	 * Matches records where date column equals specific date.
+	 *
+	 * Examples:
+	 *   Posts::whereDate('created_at', '2024-01-15')->all();
+	 *
+	 * @param string $column Date/datetime column name
+	 * @param string $date Date in Y-m-d format
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereDate($column, $date)
+	{
+		return static::Query()->whereDate($column, $date);
+	}
+
+	/**
+	 * Filter by month component
+	 *
+	 * Matches records where date column is in specific month.
+	 *
+	 * Examples:
+	 *   Posts::whereMonth('created_at', 12)->all();
+	 *
+	 * @param string $column Date/datetime column name
+	 * @param int $month Month number (1-12)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereMonth($column, $month)
+	{
+		return static::Query()->whereMonth($column, $month);
+	}
+
+	/**
+	 * Filter by year component
+	 *
+	 * Matches records where date column is in specific year.
+	 *
+	 * Examples:
+	 *   Posts::whereYear('created_at', 2024)->all();
+	 *
+	 * @param string $column Date/datetime column name
+	 * @param int $year Year value
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereYear($column, $year)
+	{
+		return static::Query()->whereYear($column, $year);
+	}
+
+	/**
+	 * Paginate results with metadata
+	 *
+	 * Returns paginated results with additional pagination metadata.
+	 *
+	 * Examples:
+	 *   Posts::paginate(10, 1);
+	 *   Posts::where('status', 'published')->paginate(15, 2);
+	 *
+	 * @param int $perPage Items per page
+	 * @param int $page Current page number (1-based)
+	 * @return array Pagination result with metadata
+	 */
+	final public static function paginate($perPage = 15, $page = 1)
+	{
+		return static::Query()->paginate($perPage, $page);
+	}
+
+	/**
+	 * Update existing record or create new one
+	 *
+	 * If WHERE clause matches a record, updates it.
+	 * If no match, creates new record.
+	 *
+	 * Examples:
+	 *   Posts::where('email', 'test@example.com')->updateOrCreate(['name' => 'John']);
+	 *
+	 * @param array $values Values to update/insert
+	 * @return MySQLResponse Query execution result
+	 */
+	final public static function updateOrCreate($values)
+	{
+		return static::Query()->updateOrCreate($values);
+	}
+
+	/**
+	 * Get first matching record or create new one
+	 *
+	 * If WHERE clause matches a record, returns it.
+	 * If no match, creates new record and returns it.
+	 *
+	 * Examples:
+	 *   Posts::where('email', 'test@example.com')->firstOrCreate(['name' => 'John']);
+	 *
+	 * @param array $values Values to insert if not found
+	 * @return array The found or created record
+	 */
+	final public static function firstOrCreate($values)
+	{
+		return static::Query()->firstOrCreate($values);
+	}
+
+	// =========================================================================
+	// NICE TO HAVE FEATURES - Advanced Utilities
+	// =========================================================================
+
+	/**
+	 * Process large datasets in chunks
+	 *
+	 * Retrieves and processes records in batches to avoid memory issues.
+	 *
+	 * Examples:
+	 *   Posts::chunk(100, function($records) {
+	 *       foreach ($records as $record) {
+	 *           // Process each record
+	 *       }
+	 *   });
+	 *
+	 * @param int $size Chunk size (records per batch)
+	 * @param callable $callback Function to execute for each chunk
+	 * @return void
+	 */
+	final public static function chunk($size, $callback)
+	{
+		return static::Query()->chunk($size, $callback);
+	}
+
+	/**
+	 * Calculate sum of column values
+	 *
+	 * Returns the sum of all values in a numeric column.
+	 *
+	 * Examples:
+	 *   Posts::sum('views');
+	 *   Posts::where('status', 'completed')->sum('amount');
+	 *
+	 * @param string $column Column name to sum
+	 * @return float Sum of column values
+	 */
+	final public static function sum($column)
+	{
+		return static::Query()->sum($column);
+	}
+
+	/**
+	 * Calculate average of column values
+	 *
+	 * Returns the average of all values in a numeric column.
+	 *
+	 * Examples:
+	 *   Posts::avg('rating');
+	 *   Posts::where('category', 'electronics')->avg('price');
+	 *
+	 * @param string $column Column name to average
+	 * @return float Average of column values
+	 */
+	final public static function avg($column)
+	{
+		return static::Query()->avg($column);
+	}
+
+	/**
+	 * Find minimum column value
+	 *
+	 * Returns the smallest value in a column.
+	 *
+	 * Examples:
+	 *   Posts::min('price');
+	 *   Posts::where('in_stock', 1)->min('price');
+	 *
+	 * @param string $column Column name
+	 * @return mixed Minimum value
+	 */
+	final public static function min($column)
+	{
+		return static::Query()->min($column);
+	}
+
+	/**
+	 * Find maximum column value
+	 *
+	 * Returns the largest value in a column.
+	 *
+	 * Examples:
+	 *   Posts::max('views');
+	 *   Posts::where('category', 'laptops')->max('price');
+	 *
+	 * @param string $column Column name
+	 * @return mixed Maximum value
+	 */
+	final public static function max($column)
+	{
+		return static::Query()->max($column);
+	}
+
+	/**
+	 * Compare two columns in WHERE clause
+	 *
+	 * Adds WHERE condition comparing two columns.
+	 *
+	 * Examples:
+	 *   Posts::whereColumn('first_name', 'last_name')->all();
+	 *   Posts::whereColumn('created_at', '>', 'updated_at')->all();
+	 *
+	 * @param string $column1 First column name
+	 * @param string $operatorOrColumn2 Operator or second column name
+	 * @param string|null $column2 Second column name (if operator provided)
+	 * @return object Query instance (chainable)
+	 */
+	final public static function whereColumn($column1, $operatorOrColumn2, $column2 = null)
+	{
+		return static::Query()->whereColumn($column1, $operatorOrColumn2, $column2);
 	}
 }
