@@ -20,7 +20,7 @@
  */
 
 use Rackage\Database\Database;
-use Rackage\Cache\CacheBase;
+use Rackage\Cache\CacheHandler;
 use Rackage\Templates\Template;
 
 class Registry {
@@ -62,15 +62,23 @@ class Registry {
 	/**
 	 * Cache configuration (from cache.php)
 	 * Contains cache driver settings
-	 * 
+	 *
 	 * @var array
 	 */
 	private static $cache = array();
 
 	/**
+	 * Flag indicating if current page should be cached
+	 * Set by Router after caching decision, read by View
+	 *
+	 * @var bool
+	 */
+	private static $shouldCache = false;
+
+	/**
 	 * Mail configuration (from mail.php)
 	 * Contains email/SMTP settings
-	 * 
+	 *
 	 * @var array
 	 */
 	private static $mail = array();
@@ -234,10 +242,21 @@ class Registry {
 		self::$url = $url;
 		return new self;
 	}
-    
+
+	/**
+	 * Set whether current page should be cached
+	 *
+	 * @param bool $shouldCache True if page should be cached
+	 * @return void
+	 */
+	public static function setShouldCache($shouldCache)
+	{
+		self::$shouldCache = $shouldCache;
+	}
+
     /**
      * Shorthand getter for settings
-     * 
+     *
      * @return array Application settings
      */
     public static function settings()
@@ -277,12 +296,22 @@ class Registry {
     
     /**
      * Shorthand getter for URL
-     * 
+     *
      * @return string Current request URL
      */
     public static function url()
     {
         return self::$url;
+    }
+
+    /**
+     * Shorthand getter for shouldCache flag
+     *
+     * @return bool Whether current page should be cached
+     */
+    public static function shouldCache()
+    {
+        return self::$shouldCache;
     }
     
 
@@ -344,21 +373,32 @@ class Registry {
 	/**
 	 * Create cache instance
 	 *
+	 * Creates appropriate cache driver based on configuration.
+	 * Similar to getDatabaseInstance() pattern.
+	 *
 	 * @param array $args Additional arguments (unused)
-	 * @return CacheBase Cache instance
+	 * @return object Cache driver instance (FileCache, Memcached, or RedisCache)
 	 * @throws \RuntimeException If cache config not loaded
 	 */
 	private static function getCacheInstance($args)
 	{
+		// Get stored cache configuration
 		$config = self::$cache;
 
 		if (empty($config)) {
 			throw new \RuntimeException('Cache configuration not loaded. Call Registry::setCache() first.');
 		}
 
-		// Create cache instance based on config
-		// (Implementation depends on your CacheBase class)
-		return new CacheBase($config);
+		// Get default driver type
+		$driver = $config['default'] ?? 'file';
+
+		// Get driver-specific options
+		$options = $config['drivers'][$driver] ?? [];
+
+		// Create cache handler and initialize driver
+		$instance = new CacheHandler($driver, $options);
+
+		return $instance->initialize();
 	}
 
 	/**
