@@ -1,4 +1,4 @@
-<?php namespace Rackage\Routes;
+<?php namespace Rackage\Router;
 
 /**
  * Application Router
@@ -30,6 +30,7 @@
  */
 
 use Rackage\Registry;
+use Rackage\Cache;
 use Rackage\Utilities\UrlParser;
 use Rackage\Utilities\Inspector;
 use ReflectionClass;
@@ -94,27 +95,34 @@ class Router {
 
 	/**
 	 * Main dispatch method - handles the entire request lifecycle
-	 * 
+	 *
 	 * Process:
-	 * 1. Parse the URL
-	 * 2. Match against routes
-	 * 3. Resolve controller and action
-	 * 4. Validate controller and method exist
-	 * 5. Execute filters
-	 * 6. Dispatch controller method
-	 * 
+	 * 1. Check if cached page exists and serve it
+	 * 2. Parse the URL
+	 * 3. Match against routes
+	 * 4. Resolve controller and action
+	 * 5. Validate controller and method exist
+	 * 6. Execute filters
+	 * 7. Dispatch controller method
+	 *
 	 * @return void
 	 * @throws RouteException If routing fails
 	 */
 	public function dispatch()
 	{
 		try {
+			// Check cache first - serve and exit if hit
+			if ($this->checkCache())
+			{
+				return;
+			}
+
 			// Parse URL and resolve routing
 			$this->parseUrl();
 			$this->matchRoute();
 			$this->resolveController();
 			$this->resolveAction();
-			
+
 			// Validate and dispatch
 			$this->validateController();
 			$this->dispatchController();
@@ -125,15 +133,103 @@ class Router {
 	}
 
 	// ===========================================================================
+	// CACHE HANDLING
+	// ===========================================================================
+
+	/**
+	 * Check if cached page exists and serve it
+	 *
+	 * Determines if current request should be cached based on:
+	 * - Cache enabled in config
+	 * - HTTP request method (only GET/HEAD)
+	 * - URL not in exclusion list
+	 *
+	 * Only sets Registry::setShouldCache(true) after cache miss,
+	 * since that's when View will actually need the flag.
+	 * If cached version exists, outputs it and returns true.
+	 *
+	 * @return bool True if cache served, false otherwise
+	 */
+	private function checkCache()
+	{
+		$cacheConfig = Registry::cache();
+
+		// Cache disabled?
+		if (!$cacheConfig['enabled'])
+		{
+			return false;
+		}
+
+		// Check HTTP method
+		$requestMethod = $_SERVER['REQUEST_METHOD'];
+		if (!in_array($requestMethod, $cacheConfig['methods']))
+		{
+			return false;
+		}
+
+		// Check URL exclusions
+		$requestUri = Registry::url();
+		foreach ($cacheConfig['exclude_urls'] as $pattern)
+		{
+			if ($this->urlMatches($requestUri, $pattern))
+			{
+				return false;
+			}
+		}
+
+		// Try to get from cache
+		$cacheKey = 'page:' . md5($requestUri);
+		if (Cache::has($cacheKey))
+		{
+			echo Cache::get($cacheKey);
+			return true;
+		}
+
+		// Cache miss - set flag so View knows to store rendered output
+		Registry::setShouldCache(true);
+
+		return false;
+	}
+
+	/**
+	 * Check if URL matches exclusion pattern
+	 *
+	 * Supports exact matches and wildcard patterns:
+	 * - '/admin' matches only '/admin'
+	 * - '/admin/*' matches '/admin/users', '/admin/posts', etc.
+	 *
+	 * @param string $url URL to check
+	 * @param string $pattern Pattern to match against
+	 * @return bool True if URL matches pattern
+	 */
+	private function urlMatches($url, $pattern)
+	{
+		// Exact match
+		if ($url === $pattern)
+		{
+			return true;
+		}
+
+		// Wildcard match: '/admin/*' matches '/admin/anything'
+		if (strpos($pattern, '*') !== false)
+		{
+			$regex = '#^' . str_replace('*', '.*', preg_quote($pattern, '#')) . '$#';
+			return preg_match($regex, $url) === 1;
+		}
+
+		return false;
+	}
+
+	// ===========================================================================
 	// URL PARSING
 	// ===========================================================================
 
 	/**
 	 * Parse the incoming URL into components
-	 * 
+	 *
 	 * Creates UrlParser instance and extracts controller, method, and parameters
 	 * from the URL string.
-	 * 
+	 *
 	 * @return void
 	 */
 	private function parseUrl()

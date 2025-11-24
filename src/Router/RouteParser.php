@@ -1,4 +1,4 @@
-<?php namespace Rackage\Routes;
+<?php namespace Rackage\Router;
 
 /**
  * Route Parser
