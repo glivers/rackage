@@ -274,7 +274,7 @@ class MySQL {
 				$this->service->options(MYSQLI_OPT_CONNECT_TIMEOUT, 5);
 
 				// Enable compression - 60-70% bandwidth savings for large results
-				$this->service->options(MYSQLI_OPT_COMPRESS, true);
+				$this->service->options(MYSQLI_CLIENT_COMPRESS, true);
 
 				// Establish connection to MySQL server
 				$this->service->real_connect(
