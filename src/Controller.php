@@ -69,6 +69,12 @@ class Controller
     public $site_title;
 
     /**
+     * $enable_method_filters
+     * 
+     */
+    public $enable_filters = false;
+
+    /**
      * Application settings (quick access to Registry::settings())
      * @var array
      */
