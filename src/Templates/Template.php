@@ -111,10 +111,7 @@ class Template {
 		try {
 			// Check if this file exists
 			if (!file_exists($path)) {
-				throw new TemplateException(
-					get_class(new TemplateException) . ": The view file named '$fileName' cannot be found!",
-					1
-				);
+				throw new TemplateException("The view file named '$fileName' cannot be found!", 1);
 			}
 
 			// Set the file path
