@@ -467,7 +467,7 @@ class Router {
 		}
 
 		// Check if filters are enabled
-		if ($dispatch->enable_method_filters === true) {
+		if ($dispatch->enable_filters === true) {
 			// Execute with filters
 			$this->dispatchWithFilters($dispatch, $reflection, $method);
 		} else {
