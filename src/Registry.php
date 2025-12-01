@@ -147,25 +147,25 @@ class Registry {
 		$args = array_slice(func_get_args(), 1);
 
 		// Return cached instance if it exists
-		if (isset(self::$instances[$key])) {
-			return self::$instances[$key];
+		if (isset(static::$instances[$key])) {
+			return static::$instances[$key];
 		}
 
 		// Check if this is a registered resource
-		if (!in_array($key, self::$resources)) {
+		if (!in_array($key, static::$resources)) {
 			throw new \InvalidArgumentException("Resource '{$key}' is not registered in Registry");
 		}
 
 		// Create the resource instance
-		$instance = self::getInstance($key, $args);
+		$instance = static::getInstance($key, $args);
 
 		if (!$instance) {
 			throw new \RuntimeException("Failed to create instance of resource '{$key}'");
 		}
 
 		// Cache and return the instance
-		self::$instances[$key] = $instance;
-		return self::$instances[$key];
+		static::$instances[$key] = $instance;
+		return static::$instances[$key];
 	}
 
 	/**
@@ -180,7 +180,7 @@ class Registry {
 	 */
 	public static function set($key, $instance)
 	{		
-		self::$instances[$key] = $instance;
+		static::$instances[$key] = $instance;
 	}
 
 	/**
@@ -191,8 +191,8 @@ class Registry {
 	 */
 	public static function setSettings($settings)
 	{
-		self::$settings = $settings;
-		return new self;
+		static::$settings = $settings;
+		return new static;
 	}
 
 	/**
@@ -203,8 +203,8 @@ class Registry {
 	 */
 	public static function setDatabase($database)
 	{
-		self::$database = $database;
-		return new self;
+		static::$database = $database;
+		return new static;
 	}
 
 	/**
@@ -215,8 +215,8 @@ class Registry {
 	 */
 	public static function setCache($cache)
 	{
-		self::$cache = $cache;
-		return new self;
+		static::$cache = $cache;
+		return new static;
 	}
 
 	/**
@@ -227,8 +227,8 @@ class Registry {
 	 */
 	public static function setMail($mail)
 	{
-		self::$mail = $mail;
-		return new self;
+		static::$mail = $mail;
+		return new static;
 	}
 
 	/**
@@ -239,8 +239,8 @@ class Registry {
 	 */
 	public static function setUrl($url)
 	{
-		self::$url = $url;
-		return new self;
+		static::$url = $url;
+		return new static;
 	}
 
 	/**
@@ -251,7 +251,7 @@ class Registry {
 	 */
 	public static function setShouldCache($shouldCache)
 	{
-		self::$shouldCache = $shouldCache;
+		static::$shouldCache = $shouldCache;
 	}
 
     /**
@@ -261,7 +261,7 @@ class Registry {
      */
     public static function settings()
     {
-        return self::$settings;
+        return static::$settings;
     }
     
     /**
@@ -271,7 +271,7 @@ class Registry {
      */
     public static function database()
     {
-        return self::$database;
+        return static::$database;
     }
     
     /**
@@ -281,7 +281,7 @@ class Registry {
      */
     public static function cache()
     {
-        return self::$cache;
+        return static::$cache;
     }
     
     /**
@@ -291,7 +291,7 @@ class Registry {
      */
     public static function mail()
     {
-        return self::$mail;
+        return static::$mail;
     }
     
     /**
@@ -301,7 +301,7 @@ class Registry {
      */
     public static function url()
     {
-        return self::$url;
+        return static::$url;
     }
 
     /**
@@ -311,7 +311,7 @@ class Registry {
      */
     public static function shouldCache()
     {
-        return self::$shouldCache;
+        return static::$shouldCache;
     }
     
 
@@ -331,7 +331,7 @@ class Registry {
 		$method = 'get' . ucfirst($key) . 'Instance';
 
 		// Call the factory method
-		return self::$method($args);
+		return static::$method($args);
 	}
 
 	/**
@@ -355,7 +355,7 @@ class Registry {
 	private static function getDatabaseInstance($args)
 	{
 		// Get stored database configuration
-		$config = self::$database;
+		$config = static::$database;
 
 		if (empty($config)) {
 			throw new \RuntimeException('Database configuration not loaded. Call Registry::setDatabase() first.');
@@ -383,7 +383,7 @@ class Registry {
 	private static function getCacheInstance($args)
 	{
 		// Get stored cache configuration
-		$config = self::$cache;
+		$config = static::$cache;
 
 		if (empty($config)) {
 			throw new \RuntimeException('Cache configuration not loaded. Call Registry::setCache() first.');
@@ -411,7 +411,7 @@ class Registry {
 	 */
 	public static function erase($key)
 	{
-		unset(self::$instances[$key]);
+		unset(static::$instances[$key]);
 	}
 
 }
