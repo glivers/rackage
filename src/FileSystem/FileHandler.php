@@ -1058,7 +1058,7 @@ class FileHandler {
      *
      * Examples:
      *   FileHandler::glob('*.php')                    // All PHP files
-     *   FileHandler::glob('src/**/*.php')             // PHP files recursively
+     *   FileHandler::glob('src/** /*.php')             // PHP files recursively
      *   FileHandler::glob('config/*.{php,json}')      // PHP or JSON in config
      *   FileHandler::glob('logs/error-*.log')         // Error logs
      *
