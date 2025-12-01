@@ -205,7 +205,7 @@ class UrlParser {
     {
         // Extract parameters from URL (everything after controller/method)
         $this->parameters = (count($this->urlComponentsArray) > 2)
-            ? Arr::slice($this->urlComponentsArray, 2)->get()
+            ? array_slice($this->urlComponentsArray, 2)
             : [];
 
         // Add additional parameter if provided
