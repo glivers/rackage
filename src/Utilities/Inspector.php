@@ -1,98 +1,127 @@
 <?php namespace Rackage\Utilities;
 
 /**
- *This class checks for presence of filter classes in the method definitinos.
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Rackage
- *@package Rackage\Utilities\Inspector
- *@link https://github.com/glivers/rackage
- *@license http://opensource.org/licenses/MIT MIT License
- *@version 2.0.1
+ * Inspector - Docblock Filter Parser
+ *
+ * Extracts @before and @after filter annotations from controller method docblocks.
+ * Used by the Router to implement method-level middleware/filters.
+ *
+ * Filter Syntax:
+ *
+ *   Single method (on current controller):
+ *     @before checkAuth
+ *     @after logActivity
+ *
+ *   External class and method:
+ *     @before AuthFilter, check
+ *     @before Filters\Security, validateToken
+ *
+ *   Multiple filters:
+ *     @before checkAuth
+ *     @before checkAdmin
+ *     @after clearCache
+ *     @after logActivity
+ *
+ * Usage:
+ *   $docblock = "/** @before checkAuth @after logActivity *\/";
+ *   $filters = Inspector::checkFilter($docblock);
+ *
+ *   // Returns:
+ *   // [
+ *   //   'before' => ['checkAuth'],
+ *   //   'after' => ['logActivity']
+ *   // ]
+ *
+ * Filter Format:
+ *   - Method only: "methodName"
+ *   - Class + method: "ClassName, methodName" or "ClassName,methodName"
+ *   - Commas and extra spaces are automatically cleaned
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2050 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Utilities\Inspector
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.2
  */
 
 class Inspector {
 
-	/**
-	*This method checks if a filter has been defined in the doc block.
-	*@param string $comment_string The doc block comment string
-	*@return mixed method name as string if found or bool false if not found
-	*/
-	public static function checkFilter($comment_string)
-	{
-		//define the regular expression pattern to use for string matching
-		$pattern = "#(@[a-zA-Z]+\s*[a-zA-Z0-9, ()_].*)#";
+    /**
+     * Extract @before and @after filters from docblock
+     *
+     * Parses docblock comments to find filter annotations.
+     * Supports both single method names and class/method pairs.
+     *
+     * Examples:
+     *   Input:  "/** @before checkAuth @before validateInput @after log *\/"
+     *   Output: ['before' => ['checkAuth', 'validateInput'], 'after' => ['log']]
+     *
+     *   Input:  "/** @before AuthFilter, check *\/"
+     *   Output: ['before' => ['AuthFilter', 'check']]
+     *
+     *   Input:  "/** @param string $id *\/"  (no filters)
+     *   Output: []
+     *
+     * Notes:
+     *   - Commas are automatically stripped from filter names
+     *   - Extra whitespace is trimmed
+     *   - Returns empty array if no filters found (not false)
+     *   - Each @before/@after can have 1 parameter (method) or 2 (class, method)
+     *
+     * @param string $comment_string The docblock comment string
+     * @return array Array with 'before' and/or 'after' keys, or empty array
+     */
+    public static function checkFilter($comment_string)
+    {
+        // Match only @before and @after annotations (ignore @param, @return, etc.)
+        $pattern = "#@(before|after)\s+([a-zA-Z0-9\\\\_,\s]+)#";
 
-		//perform the regular expression on the string provided
-		preg_match_all($pattern, $comment_string, $matches, PREG_PATTERN_ORDER);
+        preg_match_all($pattern, $comment_string, $matches, PREG_SET_ORDER);
 
-		//get the meta elements in array
-		$meta_data_array = $matches[0];
+        // No filters found, return empty array
+        if (empty($matches)) {
+            return [];
+        }
 
-		//check meta data was found
-		if(count($meta_data_array) > 0){
+        $beforeFilters = [];
+        $afterFilters = [];
 
-			//set array for before and after filters
-			$beforeFilters = array();
-			$afterFilters = array();
+        // Process each @before or @after annotation
+        foreach ($matches as $match) {
+            $filterType = $match[1];  // "before" or "after"
+            $filterValue = $match[2]; // "checkAuth" or "AuthFilter, check"
 
-			//loop through array getting before and after filters
-			foreach($meta_data_array as $key => $value){
+            // Split by space to get individual parameters
+            $parts = preg_split('/\s+/', trim($filterValue));
 
-				//get before filter
-				if(strpos($value, "@before") !== false){
-					
-					$strb = explode(' ', trim($value)); $strb = self::clean($strb);
-					(isset($strb[1])) ? $beforeFilters[] = $strb[1] : ''; 
-					(isset($strb[2])) ? $beforeFilters[] = $strb[2] : ''; 
-					
-				}
+            // Clean each part (remove commas, trim whitespace, remove empties)
+            $cleanParts = [];
+            foreach ($parts as $part) {
+                $cleaned = trim(str_replace(',', '', $part));
+                if (!empty($cleaned)) {
+                    $cleanParts[] = $cleaned;
+                }
+            }
 
-				//get after filters
-				if(strpos($value,"@after") !== false){
+            // Add to appropriate filter array
+            if ($filterType === 'before') {
+                $beforeFilters = array_merge($beforeFilters, $cleanParts);
+            } else {
+                $afterFilters = array_merge($afterFilters, $cleanParts);
+            }
+        }
 
-					$stra = explode(' ', trim($value)); $stra = self::clean($stra);
-					(isset($stra[1])) ? $afterFilters[] = $stra[1] : ''; 
-					(isset($stra[2])) ? $afterFilters[] = $stra[2] : '';
+        // Build return array
+        $result = [];
+        if (!empty($beforeFilters)) {
+            $result['before'] = $beforeFilters;
+        }
+        if (!empty($afterFilters)) {
+            $result['after'] = $afterFilters;
+        }
 
-				}
-
-			}
-
-			//define the array to return
-			$return = array();
-
-			//check if before and after filters were empty
-			if( ! empty($beforeFilters)) $return['before'] = $beforeFilters;
-
-			if( ! empty($afterFilters)) $return['after'] = $afterFilters;
-				
-			return $return;
-		
-		}
-
-		//no meta data found, return false
-		else return false;
-
-	}
-
-	/**
-	*This method removes empty array from the array and returns elements with valid values.
-	*@param array $array The array to parse
-	*@return array The array after removing empty values
-	*/
-	private static function clean($array)
-	{
-
-		//loop throught the input array removing empty elements and return resultant array
-		$output = array_values(array_filter($array, function($item){
-
-				return ! empty($item);
-
-		}));
-
-		return $output;
-
-	}
-
+        return $result;
+    }
 }

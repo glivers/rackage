@@ -12,6 +12,6 @@
  * @version 2.0.1
  */
 
-use Exceptions\BaseExceptionClass;
+use Exceptions\ExceptionClass;
 
-class TemplateException extends BaseExceptionClass {}
+class TemplateException extends ExceptionClass {}

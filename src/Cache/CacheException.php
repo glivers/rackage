@@ -1,44 +1,31 @@
-<?php namespace Drivers\Cache;
+<?php namespace Rackage\Cache;
 
 /**
- *This class handles all exceptions throw in the context of caching
+ * Cache Exception Handler
  *
- *@author Geoffrey Okongo <code@rachie.dev>
- *@copyright 2015 - 2030 Geoffrey Okongo
- *@category Rackage
- *@package Rackage\Drivers\Cache
- *@link https://github.com/glivers/gliver
- *@license http://opensource.org/licenses/MIT MIT License
- *@version 2.0.1
+ * Handles all exceptions thrown in the context of cache operations.
+ * Extends the main ExceptionClass to ensure unified error handling with
+ * logging, dev/prod modes, and custom error pages.
+ *
+ * Features:
+ *   - Inherits error logging from ExceptionClass
+ *   - Inherits dev/prod mode handling from ExceptionClass
+ *   - Inherits stack trace formatting from ExceptionClass
+ *   - Provides cache-specific exception type for catch blocks
+ *
+ * Usage:
+ *   throw new CacheException("Connection failed");
+ *   throw new CacheException("Invalid cache driver: xyz");
+ *
+ * @author Geoffrey Okongo <code@rachie.dev>
+ * @copyright 2015 - 2030 Geoffrey Okongo
+ * @category Rackage
+ * @package Rackage\Cache
+ * @link https://github.com/glivers/rackage
+ * @license http://opensource.org/licenses/MIT MIT License
+ * @version 2.0.2
  */
 
-use Helpers\Path;
+use Exceptions\ExceptionClass;
 
-class CacheException extends \Exception {
-
-	/**
-	 *This method displays the error message
-	 *
-	 *@param 
-	 *
-	 */
-	public function show()
-	{
-		//get the global $config array for site title
-		global $config;
-
-		//set the title variable
-		$title = $config['title'];
-
-		//the variable to be populated with the error message
-		$msg = $this->getCode() . ': Error on line '.$this->getLine().' in '.$this->getFile() .': <b>  "'.$this->getMessage().' " </b> ';
-
-		//load the template file
-		include Path::sys() . 'Exceptions' . DIRECTORY_SEPARATOR . 'index.php';
-
-		//stop further output
-		exit();
-
-	}
-
-}
+class CacheException extends ExceptionClass {}
