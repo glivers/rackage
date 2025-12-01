@@ -73,10 +73,6 @@
  *   RAW SQL:
  *   - rawQuery($sql)            Execute raw SQL
  *
- *   SCHEMA:
- *   - createTable()             Create table from model
- *   - updateTable()             Update table structure
- *
  * Security:
  *   - All queries use PDO prepared statements
  *   - Automatic parameter binding prevents SQL injection
@@ -96,7 +92,6 @@
  */
 
 use Rackage\Registry;
-use Rackage\Database\MySQL\MySQLTable;
 use Rackage\ModelException;
 
 class Model
@@ -796,42 +791,6 @@ class Model
 	final public static function rawQuery($query_string)
 	{
 		return static::Query()->rawQuery($query_string);
-	}
-
-	// =========================================================================
-	// SCHEMA METHODS
-	// =========================================================================
-
-	/**
-	 * Create table from model definition
-	 *
-	 * Creates database table based on model schema properties.
-	 * Requires model to define table structure.
-	 *
-	 * Example:
-	 *   Posts::createTable();
-	 *
-	 * @return bool True on success
-	 */
-	final public static function createTable()
-	{
-		return (new MySQLTable(static::$table, get_called_class(), Registry::get('database')))->createTable();
-	}
-
-	/**
-	 * Update table structure
-	 *
-	 * Updates existing table structure to match model definition.
-	 * Used for schema migrations.
-	 *
-	 * Example:
-	 *   Posts::updateTable();
-	 *
-	 * @return bool True on success
-	 */
-	final public static function updateTable()
-	{
-		return (new MySQLTable(static::$table, get_called_class(), Registry::get('database')))->updateTable();
 	}
 
 	// =========================================================================
