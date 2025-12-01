@@ -2807,7 +2807,7 @@ class MySQLQuery
 	 * @return MySQLResponse Response with insert ID or affected rows
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps)
+	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps = false)
 	{
 		// Determine if this is insert or update
 		$doInsert = sizeof($this->wheres) == 0;
