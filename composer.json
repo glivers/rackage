@@ -9,10 +9,10 @@
             "email": "code@rachie.dev"
         }
     ],
-    "minimum-stability": "stable",
-    "require" : {
-        "php" : ">=7.1.0"
-    },
+    "require": {
+        "php": ">=7.4",
+        "glivers/rachie": "3.*"
+    },   
     "autoload": {
         "psr-4": { 
             "Rackage\\": "src" 
