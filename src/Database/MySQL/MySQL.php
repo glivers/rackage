@@ -161,7 +161,7 @@ class MySQL {
 	// =========================================================================
 	// CONSTRUCTOR
 	// =========================================================================
-
+ 
 	/**
 	 * Initialize MySQL driver with connection parameters
 	 *
@@ -378,10 +378,19 @@ class MySQL {
 				return $this->connect() !== false;
 			}
 
-			// Ping the MySQL server
-			if (!$this->service->ping())
+			// Ping the MySQL server (may throw mysqli_sql_exception if connection lost)
+			try
 			{
-				// Connection lost - attempt reconnection
+				if (!$this->service->ping())
+				{
+					// Connection lost - attempt reconnection
+					$this->connected = false;
+					return $this->connect() !== false;
+				}
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Ping failed (connection lost) - attempt reconnection
 				$this->connected = false;
 				return $this->connect() !== false;
 			}
@@ -476,10 +485,14 @@ class MySQL {
 	 *
 	 * @return MySQLQuery New query builder instance
 	 */
-	public function query()
+	public function query($table, $timestamps)
 	{
 		// Create query builder with reference to this connection
-		return new MySQLQuery(array('connector' => $this));
+		return new MySQLQuery(
+			['connector' => $this],
+			$table,
+			$timestamps
+		);
 	}
 
 	// =========================================================================
@@ -525,29 +538,48 @@ class MySQL {
 		try
 		{
 			// Require valid connection
-			if (!$this->validService())
-			{
+			if (!$this->validService()){
+
 				throw new DatabaseException("Not connected to a valid database service");
 			}
 
-			// Execute query
-			$result = $this->service->query($sql);
-
-			// Check for "MySQL server has gone away" error (2006)
-			if ($result === false && $this->service->errno == 2006)
+			// Execute query with auto-reconnect on "server has gone away"
+			try
 			{
+				$result = $this->service->query($sql);
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Check for "MySQL server has gone away" error (2006)
+				if ($this->service->errno == 2006){
+
+					// Attempt to reconnect and retry query once
+					if ($this->ping()) {
+						$result = $this->service->query($sql);
+					}
+					else{
+						throw $e; // Reconnection failed, re-throw
+					}
+				}
+				else {
+					throw $e; // Different error, re-throw
+				}
+			}
+
+			// Also check for false result with errno 2006 (fallback)
+			if ($result === false && $this->service->errno == 2006) {
 				// Attempt to reconnect and retry query once
-				if ($this->ping())
-				{
+				if ($this->ping()) {
 					$result = $this->service->query($sql);
 				}
 			}
 
 			return $result;
 		}
-		catch(DatabaseException $exception)
-		{
+		catch(DatabaseException $exception) {
+
 			$exception->errorShow();
+			throw $exception; // Re-throw so caller knows it failed
 		}
 	}
 
@@ -780,7 +812,7 @@ class MySQL {
 	 * @return string Error description, or empty string if no error
 	 * @throws DatabaseException If not connected to valid database service
 	 */
-	public function lastError()
+	public function lastError() 
 	{
 		try
 		{
