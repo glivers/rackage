@@ -42,7 +42,7 @@
  * @version 2.0.1
  */
 
-use Rackage\ArrayHelper\ArrayHelper as ArrayUtility;
+use Rackage\Arr;
 use Rackage\Database\MySQL\MySQLResponse;
 use Rackage\Database\DatabaseException;
 
@@ -54,6 +54,18 @@ class MySQLQuery
 	// =========================================================================
 
 	/**
+	 * Table to work on
+	 * @var string
+	 */
+	protected $table;
+
+	/**
+	 * Timestamps flag
+	 * @var bool
+	 */
+	protected $timestamps;
+
+	/**
 	 * MySQL connection instance
 	 * @var object
 	 */
@@ -63,13 +75,13 @@ class MySQLQuery
 	 * Table name for query
 	 * @var string
 	 */
-	protected $froms;
+	protected $froms; 
 
 	/**
 	 * Fields to select (multidimensional array: table => [fields])
 	 * @var array
 	 */
-	protected $fields;
+	protected $fields = [];
 
 	/**
 	 * Maximum number of rows to return
@@ -120,10 +132,16 @@ class MySQLQuery
 	protected $wheres = array();
 
 	/**
-	 * Query response object
-	 * @var MySQLResponse
+	 * Query string property; stores dynamically generated queries
+	 *
 	 */
-	protected $responseObject;
+	protected $query_string;
+
+	/**
+	 * SQL debug mode flag - when true, return SQL instead of executing
+	 * @var bool
+	 */
+	protected $returnSql = false;
 
 	// =========================================================================
 	// CONSTRUCTOR
@@ -137,13 +155,36 @@ class MySQLQuery
 	 * @param array $instance Array containing 'connector' key with MySQLConnector instance
 	 * @return void
 	 */
-	public function __construct(array $instance)
+	public function __construct(array $instance, $table, $timestamps)
 	{
 		// Store connection instance
 		$this->connector = $instance['connector'];
 
-		// Create response object instance
-		$this->responseObject = new MySQLResponse();
+		$this->table = $table;
+		$this->timestamps = $timestamps;
+
+	}
+
+
+	/**
+	 * Enable SQL debug mode
+	 *
+	 * When enabled, exit methods (all, first, save, delete, etc.) return
+	 * the SQL query string instead of executing it. Use for debugging.
+	 *
+	 * Examples:
+	 *   UserModel::toSql()->where('status', 'active')->all()
+	 *   → "SELECT users.* FROM users WHERE status = 'active'"
+	 *
+	 *   UserModel::toSql()->where('id', 5)->save(['status' => 'banned'])
+	 *   → "UPDATE users SET status = 'banned' WHERE id = 5"
+	 *
+	 * @return $this For method chaining
+	 */
+	public function toSql()
+	{
+		$this->returnSql = true;
+		return $this;
 	}
 
 	// =========================================================================
@@ -189,13 +230,13 @@ class MySQLQuery
 			{
 				// Recursively quote each element
 				array_push($buffer, $this->quote($i));
-
-				// Join array elements
-				$buffer = join(", ", $buffer);
-
-				// Return in parentheses
-				return "({$buffer})";
 			}
+
+			// Join array elements
+			$buffer = join(", ", $buffer);
+
+			// Return in parentheses
+			return "({$buffer})";
 		}
 
 		// NULL value
@@ -239,17 +280,10 @@ class MySQLQuery
 	 */
 	public function setTable($table)
 	{
-		try
+		// Validate table name is not empty
+		if (empty($table))
 		{
-			// Validate table name is not empty
-			if (empty($table))
-			{
-				throw new DatabaseException("Invalid argument passed for table name", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid argument passed for table name", 1);
 		}
 
 		// Set table name
@@ -276,22 +310,36 @@ class MySQLQuery
 	 */
 	public function setFields($table, $fields = array("*"))
 	{
-		try
+		// Validate table name is not empty
+		if (empty($table))
 		{
-			// Validate table name is not empty
-			if (empty($table))
-			{
-				throw new DatabaseException("Invalid argument passed for table name", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid argument passed for table name", 1);
 		}
 
 		// Set table and fields
 		$this->froms = $table;
 		$this->fields[$table] = $fields;
+
+		return $this;
+	}
+
+	/**
+	 * Chainable select method for specifying columns
+	 *
+	 * This is a convenience wrapper around setFields() that allows
+	 * select() to be chained after other query methods like whereIn().
+	 *
+	 * Usage:
+	 *   // Chained after whereIn()
+	 *   Model::whereIn('id', [1,2,3])->select(['id', 'name'])->all();
+	 *
+	 * @param array $fields Column names to select (default: all columns)
+	 * @return MySQLQuery Returns $this for method chaining
+	 */
+	public function select($fields = array("*"))
+	{
+		// Delegate to setFields() using the current table
+		return $this->setFields($this->froms, $fields);
 	}
 
 	/**
@@ -312,23 +360,16 @@ class MySQLQuery
 	 */
 	public function leftJoin($table, $condition, $fields = array("*"))
 	{
-		try
+		// Validate table is not empty
+		if (empty($table))
 		{
-			// Validate table is not empty
-			if (empty($table))
-			{
-				throw new DatabaseException("Invalid table argument $table passed for the leftJoin Clause", 1);
-			}
-
-			// Validate condition is not empty
-			if (empty($condition))
-			{
-				throw new DatabaseException("Invalid argument $condition passed for the leftJoin Clause", 1);
-			}
+			throw new DatabaseException("Invalid table argument $table passed for the leftJoin Clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		// Validate condition is not empty
+		if (empty($condition))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid argument $condition passed for the leftJoin Clause", 1);
 		}
 
 		// Add fields for this table
@@ -361,17 +402,10 @@ class MySQLQuery
 	 */
 	public function limit($limit, $page = 1)
 	{
-		try
+		// Validate limit is not empty
+		if (empty($limit))
 		{
-			// Validate limit is not empty
-			if (empty($limit))
-			{
-				throw new DatabaseException("Empty argument passed for $limit in method limit()", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Empty argument passed for $limit in method limit()", 1);
 		}
 
 		// Set limit
@@ -418,17 +452,10 @@ class MySQLQuery
 	 */
 	public function order($order, $direction = 'asc')
 	{
-		try
+		// Validate order field is not empty
+		if (empty($order))
 		{
-			// Validate order field is not empty
-			if (empty($order))
-			{
-				throw new DatabaseException("Empty value passed for parameter $order in order() method", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Empty value passed for parameter $order in order() method", 1);
 		}
 
 		// Add order clause to array (supports multiple ORDER BY)
@@ -463,18 +490,9 @@ class MySQLQuery
 	 */
 	public function where($arguments)
 	{
-		try
-		{
-			// Validate argument pairs match
-			if (is_float(sizeof($arguments) / 2))
-			{
-				throw new DatabaseException("No arguments passed for the where clause");
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
-		}
+		if(!is_array($arguments)) $arguments = func_get_args();
+
+		if (is_float(sizeof($arguments) / 2)) throw new DatabaseException("No arguments passed for the where clause");
 
 		// Single argument pair (field, value)
 		if (sizeof($arguments) == 2)
@@ -546,17 +564,10 @@ class MySQLQuery
 	 */
 	public function orWhere($arguments)
 	{
-		try
+		// Validate argument pairs match
+		if (is_float(sizeof($arguments) / 2))
 		{
-			// Validate argument pairs match
-			if (is_float(sizeof($arguments) / 2))
-			{
-				throw new DatabaseException("Invalid arguments passed for the orWhere clause");
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid arguments passed for the orWhere clause");
 		}
 
 		// Single argument pair (field, value)
@@ -625,21 +636,14 @@ class MySQLQuery
 	 */
 	public function whereIn($column, $values)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereIn clause", 1);
-			}
-
-			if (!is_array($values) || empty($values))
-			{
-				throw new DatabaseException("Invalid or empty array provided for whereIn clause", 1);
-			}
+			throw new DatabaseException("No column provided for whereIn clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if (!is_array($values) || empty($values))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid or empty array provided for whereIn clause", 1);
 		}
 
 		// Quote the array values (quote() handles arrays)
@@ -673,21 +677,14 @@ class MySQLQuery
 	 */
 	public function whereNotIn($column, $values)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereNotIn clause", 1);
-			}
-
-			if (!is_array($values) || empty($values))
-			{
-				throw new DatabaseException("Invalid or empty array provided for whereNotIn clause", 1);
-			}
+			throw new DatabaseException("No column provided for whereNotIn clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if (!is_array($values) || empty($values))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid or empty array provided for whereNotIn clause", 1);
 		}
 
 		// Quote the array values (quote() handles arrays)
@@ -725,21 +722,14 @@ class MySQLQuery
 	 */
 	public function whereBetween($column, $min, $max)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereBetween clause", 1);
-			}
-
-			if ($min === null || $max === null)
-			{
-				throw new DatabaseException("Invalid min/max values provided for whereBetween clause", 1);
-			}
+			throw new DatabaseException("No column provided for whereBetween clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if ($min === null || $max === null)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid min/max values provided for whereBetween clause", 1);
 		}
 
 		// Quote min and max values
@@ -777,21 +767,14 @@ class MySQLQuery
 	 */
 	public function whereLike($column, $pattern)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereLike clause", 1);
-			}
-
-			if ($pattern === null || $pattern === '')
-			{
-				throw new DatabaseException("No pattern provided for whereLike clause", 1);
-			}
+			throw new DatabaseException("No column provided for whereLike clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if ($pattern === null || $pattern === '')
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No pattern provided for whereLike clause", 1);
 		}
 
 		// Quote the pattern
@@ -825,21 +808,14 @@ class MySQLQuery
 	 */
 	public function whereNotLike($column, $pattern)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereNotLike clause", 1);
-			}
-
-			if ($pattern === null || $pattern === '')
-			{
-				throw new DatabaseException("No pattern provided for whereNotLike clause", 1);
-			}
+			throw new DatabaseException("No column provided for whereNotLike clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if ($pattern === null || $pattern === '')
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No pattern provided for whereNotLike clause", 1);
 		}
 
 		// Quote the pattern
@@ -871,16 +847,9 @@ class MySQLQuery
 	 */
 	public function whereNull($column)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereNull clause", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No column provided for whereNull clause", 1);
 		}
 
 		// Build WHERE IS NULL condition
@@ -909,16 +878,9 @@ class MySQLQuery
 	 */
 	public function whereNotNull($column)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereNotNull clause", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No column provided for whereNotNull clause", 1);
 		}
 
 		// Build WHERE IS NOT NULL condition
@@ -949,67 +911,42 @@ class MySQLQuery
 	 */
 	public function increment($column, $amount = 1)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for increment operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for increment operation", 1);
+		}
 
-			if (!is_numeric($amount) || $amount <= 0)
-			{
-				throw new DatabaseException("Invalid increment amount (must be positive number)", 1);
-			}
+		if (!is_numeric($amount) || $amount <= 0) {
+			throw new DatabaseException("Invalid increment amount (must be positive number)", 1);
+		}
 
-			// Build INCREMENT query manually
-			$where = '';
-
-			// Build WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		$where = '';
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$where = "WHERE " . join(" ", $whereParts);
 			}
-
-			// Build query
-			$query = "UPDATE {$this->froms} SET {$column} = {$column} + {$amount} {$where}";
-
-			// Execute
-			$result = $this->connector->execute($query);
-
-			// Build response
-			if ($result === false)
-			{
-				throw new DatabaseException("Increment query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Set response data
-			$this->responseObject->setQueryString($query);
-			$this->responseObject->setAffectedRows($this->connector->affectedRows());
-			$this->responseObject->setUpdateSuccess(true);
-
-			return $this->responseObject;
+			$where = "WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		$sql = "UPDATE {$this->froms} SET {$column} = {$column} + {$amount} {$where}";
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Increment query failed: " . $this->connector->lastError(), 1);
+		}
+
+		return $this->connector->affectedRows();
 	}
 
 	/**
@@ -1031,67 +968,42 @@ class MySQLQuery
 	 */
 	public function decrement($column, $amount = 1)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for decrement operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for decrement operation", 1);
+		}
 
-			if (!is_numeric($amount) || $amount <= 0)
-			{
-				throw new DatabaseException("Invalid decrement amount (must be positive number)", 1);
-			}
+		if (!is_numeric($amount) || $amount <= 0) {
+			throw new DatabaseException("Invalid decrement amount (must be positive number)", 1);
+		}
 
-			// Build DECREMENT query manually
-			$where = '';
-
-			// Build WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		$where = '';
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$where = "WHERE " . join(" ", $whereParts);
 			}
-
-			// Build query
-			$query = "UPDATE {$this->froms} SET {$column} = {$column} - {$amount} {$where}";
-
-			// Execute
-			$result = $this->connector->execute($query);
-
-			// Build response
-			if ($result === false)
-			{
-				throw new DatabaseException("Decrement query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Set response data
-			$this->responseObject->setQueryString($query);
-			$this->responseObject->setAffectedRows($this->connector->affectedRows());
-			$this->responseObject->setUpdateSuccess(true);
-
-			return $this->responseObject;
+			$where = "WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		$sql = "UPDATE {$this->froms} SET {$column} = {$column} - {$amount} {$where}";
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Decrement query failed: " . $this->connector->lastError(), 1);
+		}
+
+		return $this->connector->affectedRows();
 	}
 
 	/**
@@ -1120,51 +1032,44 @@ class MySQLQuery
 	 */
 	public function whereFulltext($columns, $search, $mode = 'natural')
 	{
-		try
+		if (!is_array($columns) || empty($columns))
 		{
-			if (!is_array($columns) || empty($columns))
-			{
-				throw new DatabaseException("Invalid columns array for whereFulltext clause", 1);
-			}
-
-			if (empty($search))
-			{
-				throw new DatabaseException("No search term provided for whereFulltext clause", 1);
-			}
-
-			$validModes = ['natural', 'boolean', 'expansion'];
-
-			if (!in_array($mode, $validModes))
-			{
-				throw new DatabaseException("Invalid search mode '{$mode}' for whereFulltext clause", 1);
-			}
-
-			// Map mode to MySQL syntax
-			$modeMap = [
-				'natural' => 'IN NATURAL LANGUAGE MODE',
-				'boolean' => 'IN BOOLEAN MODE',
-				'expansion' => 'IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION'
-			];
-
-			$modeString = $modeMap[$mode];
-
-			// Quote search term
-			$quotedSearch = $this->quote($search);
-
-			// Build MATCH...AGAINST clause
-			$columnList = join(', ', $columns);
-
-			$this->wheres[] = array(
-				'condition' => "MATCH({$columnList}) AGAINST({$quotedSearch} {$modeString})",
-				'operator' => 'AND'
-			);
-
-			return $this;
+			throw new DatabaseException("Invalid columns array for whereFulltext clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if (empty($search))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No search term provided for whereFulltext clause", 1);
 		}
+
+		$validModes = ['natural', 'boolean', 'expansion'];
+
+		if (!in_array($mode, $validModes))
+		{
+			throw new DatabaseException("Invalid search mode '{$mode}' for whereFulltext clause", 1);
+		}
+
+		// Map mode to MySQL syntax
+		$modeMap = [
+			'natural' => 'IN NATURAL LANGUAGE MODE',
+			'boolean' => 'IN BOOLEAN MODE',
+			'expansion' => 'IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION'
+		];
+
+		$modeString = $modeMap[$mode];
+
+		// Quote search term
+		$quotedSearch = $this->quote($search);
+
+		// Build MATCH...AGAINST clause
+		$columnList = join(', ', $columns);
+
+		$this->wheres[] = array(
+			'condition' => "MATCH({$columnList}) AGAINST({$quotedSearch} {$modeString})",
+			'operator' => 'AND'
+		);
+
+		return $this;
 	}
 
 	/**
@@ -1190,39 +1095,32 @@ class MySQLQuery
 	 */
 	public function rawQueryWithBinding($query, ...$params)
 	{
-		try
+		if (empty($query))
 		{
-			if (empty($query))
-			{
-				throw new DatabaseException("No query provided for rawQueryWithBinding", 1);
-			}
-
-			// Count placeholders
-			$placeholderCount = substr_count($query, '?');
-
-			if ($placeholderCount !== count($params))
-			{
-				throw new DatabaseException("Parameter count mismatch: {$placeholderCount} placeholders, " . count($params) . " params provided", 1);
-			}
-
-			// Replace ? with %s for sprintf
-			$query = preg_replace("#\?#", "%s", $query);
-
-			// Quote all parameters
-			$quotedParams = array_map(function($param) {
-				return $this->quote($param);
-			}, $params);
-
-			// Build final query
-			$finalQuery = vsprintf($query, $quotedParams);
-
-			// Execute using existing rawQuery method
-			return $this->rawQuery($finalQuery);
+			throw new DatabaseException("No query provided for rawQueryWithBinding", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		// Count placeholders
+		$placeholderCount = substr_count($query, '?');
+
+		if ($placeholderCount !== count($params))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Parameter count mismatch: {$placeholderCount} placeholders, " . count($params) . " params provided", 1);
 		}
+
+		// Replace ? with %s for sprintf
+		$query = preg_replace("#\?#", "%s", $query);
+
+		// Quote all parameters
+		$quotedParams = array_map(function($param) {
+			return $this->quote($param);
+		}, $params);
+
+		// Build final query
+		$finalQuery = vsprintf($query, $quotedParams);
+
+		// Execute using existing rawQuery method
+		return $this->rawQuery($finalQuery);
 	}
 
 	/**
@@ -1246,21 +1144,14 @@ class MySQLQuery
 	 */
 	public function transaction()
 	{
-		try
-		{
-			$result = $this->connector->execute("START TRANSACTION");
+		$result = $this->connector->execute("START TRANSACTION");
 
-			if ($result === false)
-			{
-				throw new DatabaseException("Failed to start transaction: " . $this->connector->lastError(), 1);
-			}
-
-			return true;
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
+		if ($result === false)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Failed to start transaction: " . $this->connector->lastError(), 1);
 		}
+
+		return true;
 	}
 
 	/**
@@ -1278,21 +1169,14 @@ class MySQLQuery
 	 */
 	public function commit()
 	{
-		try
-		{
-			$result = $this->connector->execute("COMMIT");
+		$result = $this->connector->execute("COMMIT");
 
-			if ($result === false)
-			{
-				throw new DatabaseException("Failed to commit transaction: " . $this->connector->lastError(), 1);
-			}
-
-			return true;
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
+		if ($result === false)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Failed to commit transaction: " . $this->connector->lastError(), 1);
 		}
+
+		return true;
 	}
 
 	/**
@@ -1314,21 +1198,14 @@ class MySQLQuery
 	 */
 	public function rollback()
 	{
-		try
-		{
-			$result = $this->connector->execute("ROLLBACK");
+		$result = $this->connector->execute("ROLLBACK");
 
-			if ($result === false)
-			{
-				throw new DatabaseException("Failed to rollback transaction: " . $this->connector->lastError(), 1);
-			}
-
-			return true;
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
+		if ($result === false)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Failed to rollback transaction: " . $this->connector->lastError(), 1);
 		}
+
+		return true;
 	}
 
 	// =========================================================================
@@ -1353,33 +1230,24 @@ class MySQLQuery
 	 */
 	public function pluck($column)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for pluck operation", 1);
-			}
-
-			// Get all results
-			$results = $this->all();
-
-			// Extract column values
-			$values = array();
-
-			foreach ($results as $row)
-			{
-				if (isset($row[$column]))
-				{
-					$values[] = $row[$column];
-				}
-			}
-
-			return $values;
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for pluck operation", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		$results = $this->all();
+
+		if (is_string($results)) {
+			return $results;
 		}
+
+		$values = array();
+		foreach ($results as $row) {
+			if (isset($row[$column])) {
+				$values[] = $row[$column];
+			}
+		}
+
+		return $values;
 	}
 
 	/**
@@ -1399,28 +1267,22 @@ class MySQLQuery
 	 */
 	public function exists()
 	{
-		try
-		{
-			// Use LIMIT 1 for efficiency
-			$this->limits = 1;
-			$this->offset = 0;
+		$this->limits = 1;
+		$this->offset = 0;
 
-			// Build and execute query
-			$query = $this->buildSelect();
-			$result = $this->connector->execute($query);
+		$sql = $this->buildSelect();
 
-			if ($result === false)
-			{
-				throw new DatabaseException("Exists query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Check if any rows returned
-			return $result->num_rows > 0;
+		if ($this->returnSql) {
+			return $sql;
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Exists query failed: " . $this->connector->lastError(), 1);
 		}
+
+		return $result->num_rows > 0;
 	}
 
 	/**
@@ -1438,33 +1300,26 @@ class MySQLQuery
 	 */
 	public function whereDate($column, $date)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereDate clause", 1);
-			}
-
-			if (empty($date))
-			{
-				throw new DatabaseException("No date provided for whereDate clause", 1);
-			}
-
-			// Quote the date
-			$quotedDate = $this->quote($date);
-
-			// Build WHERE DATE() condition
-			$this->wheres[] = array(
-				'condition' => "DATE({$column}) = {$quotedDate}",
-				'operator' => 'AND'
-			);
-
-			return $this;
+			throw new DatabaseException("No column provided for whereDate clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if (empty($date))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No date provided for whereDate clause", 1);
 		}
+
+		// Quote the date
+		$quotedDate = $this->quote($date);
+
+		// Build WHERE DATE() condition
+		$this->wheres[] = array(
+			'condition' => "DATE({$column}) = {$quotedDate}",
+			'operator' => 'AND'
+		);
+
+		return $this;
 	}
 
 	/**
@@ -1482,30 +1337,23 @@ class MySQLQuery
 	 */
 	public function whereMonth($column, $month)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereMonth clause", 1);
-			}
-
-			if ($month < 1 || $month > 12)
-			{
-				throw new DatabaseException("Invalid month value (must be 1-12)", 1);
-			}
-
-			// Build WHERE MONTH() condition
-			$this->wheres[] = array(
-				'condition' => "MONTH({$column}) = {$month}",
-				'operator' => 'AND'
-			);
-
-			return $this;
+			throw new DatabaseException("No column provided for whereMonth clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if ($month < 1 || $month > 12)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid month value (must be 1-12)", 1);
 		}
+
+		// Build WHERE MONTH() condition
+		$this->wheres[] = array(
+			'condition' => "MONTH({$column}) = {$month}",
+			'operator' => 'AND'
+		);
+
+		return $this;
 	}
 
 	/**
@@ -1523,30 +1371,23 @@ class MySQLQuery
 	 */
 	public function whereYear($column, $year)
 	{
-		try
+		if (empty($column))
 		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for whereYear clause", 1);
-			}
-
-			if (!is_numeric($year) || $year < 1000 || $year > 9999)
-			{
-				throw new DatabaseException("Invalid year value", 1);
-			}
-
-			// Build WHERE YEAR() condition
-			$this->wheres[] = array(
-				'condition' => "YEAR({$column}) = {$year}",
-				'operator' => 'AND'
-			);
-
-			return $this;
+			throw new DatabaseException("No column provided for whereYear clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		if (!is_numeric($year) || $year < 1000 || $year > 9999)
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid year value", 1);
 		}
+
+		// Build WHERE YEAR() condition
+		$this->wheres[] = array(
+			'condition' => "YEAR({$column}) = {$year}",
+			'operator' => 'AND'
+		);
+
+		return $this;
 	}
 
 	/**
@@ -1574,47 +1415,41 @@ class MySQLQuery
 	 */
 	public function paginate($perPage = 15, $page = 1)
 	{
-		try
-		{
-			if ($perPage < 1)
-			{
-				throw new DatabaseException("Invalid perPage value (must be >= 1)", 1);
-			}
-
-			if ($page < 1)
-			{
-				throw new DatabaseException("Invalid page value (must be >= 1)", 1);
-			}
-
-			// Get total count (before applying limit)
-			$countQuery = clone $this;
-			$total = $countQuery->count();
-
-			// Apply pagination
-			$this->limit($perPage, $page);
-
-			// Get results
-			$data = $this->all();
-
-			// Calculate metadata
-			$lastPage = (int)ceil($total / $perPage);
-			$from = (($page - 1) * $perPage) + 1;
-			$to = min($from + $perPage - 1, $total);
-
-			return array(
-				'data' => $data,
-				'current_page' => $page,
-				'per_page' => $perPage,
-				'total' => $total,
-				'last_page' => $lastPage,
-				'from' => $total > 0 ? $from : null,
-				'to' => $total > 0 ? $to : null
-			);
+		if ($perPage < 1) {
+			throw new DatabaseException("Invalid perPage value (must be >= 1)", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($page < 1) {
+			throw new DatabaseException("Invalid page value (must be >= 1)", 1);
 		}
+
+		$countQuery = clone $this;
+		$total = $countQuery->count();
+
+		if (is_string($total)) {
+			return $total;
+		}
+
+		$this->limit($perPage, $page);
+		$data = $this->all();
+
+		if (is_string($data)) {
+			return $data;
+		}
+
+		$lastPage = (int)ceil($total / $perPage);
+		$from = (($page - 1) * $perPage) + 1;
+		$to = min($from + $perPage - 1, $total);
+
+		return array(
+			'data' => $data,
+			'current_page' => $page,
+			'per_page' => $perPage,
+			'total' => $total,
+			'last_page' => $lastPage,
+			'from' => $total > 0 ? $from : null,
+			'to' => $total > 0 ? $to : null
+		);
 	}
 
 	/**
@@ -1632,32 +1467,16 @@ class MySQLQuery
 	 */
 	public function updateOrCreate($values)
 	{
-		try
-		{
-			if (empty($values))
-			{
-				throw new DatabaseException("No values provided for updateOrCreate", 1);
-			}
-
-			// Check if record exists
-			if ($this->exists())
-			{
-				// Update existing record
-				return $this->save($values);
-			}
-			else
-			{
-				// Create new record
-				// Need to reset WHERE clauses for insert
-				$insertQuery = new static(['connector' => $this->connector]);
-				$insertQuery->froms = $this->froms;
-
-				return $insertQuery->save($values);
-			}
+		if (empty($values)) {
+			throw new DatabaseException("No values provided for updateOrCreate", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($this->exists()) {
+			return $this->save($values);
+		} else {
+			$insertQuery = new static(['connector' => $this->connector], $this->froms, false);
+			$insertQuery->froms = $this->froms;
+			return $insertQuery->save($values);
 		}
 	}
 
@@ -1676,41 +1495,24 @@ class MySQLQuery
 	 */
 	public function firstOrCreate($values)
 	{
-		try
-		{
-			if (empty($values))
-			{
-				throw new DatabaseException("No values provided for firstOrCreate", 1);
-			}
-
-			// Try to get existing record
-			$existing = $this->first();
-
-			if ($existing)
-			{
-				// Return existing record
-				return $existing;
-			}
-			else
-			{
-				// Create new record
-				$insertQuery = new static(['connector' => $this->connector]);
-				$insertQuery->froms = $this->froms;
-
-				$result = $insertQuery->save($values);
-
-				// Get the newly created record
-				$lastId = $result->lastInsertId();
-
-				$newQuery = new static(['connector' => $this->connector]);
-				$newQuery->froms = $this->froms;
-
-				return $newQuery->where('id', $lastId)->first();
-			}
+		if (empty($values)) {
+			throw new DatabaseException("No values provided for firstOrCreate", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		$existing = $this->first();
+
+		if ($existing) {
+			return $existing;
+		} else {
+			$insertQuery = new static(['connector' => $this->connector], $this->froms, false);
+			$insertQuery->froms = $this->froms;
+
+			$lastId = $insertQuery->save($values);
+
+			$newQuery = new static(['connector' => $this->connector], $this->froms, false);
+			$newQuery->froms = $this->froms;
+
+			return $newQuery->where('id', $lastId)->first();
 		}
 	}
 
@@ -1737,50 +1539,33 @@ class MySQLQuery
 	 */
 	public function chunk($size, $callback)
 	{
-		try
-		{
-			if ($size < 1)
-			{
-				throw new DatabaseException("Invalid chunk size (must be >= 1)", 1);
-			}
-
-			if (!is_callable($callback))
-			{
-				throw new DatabaseException("Invalid callback function for chunk operation", 1);
-			}
-
-			$page = 1;
-
-			do
-			{
-				// Get chunk
-				$chunkQuery = clone $this;
-				$chunkQuery->limit($size, $page);
-				$results = $chunkQuery->all();
-
-				// Stop if no results
-				if (empty($results))
-				{
-					break;
-				}
-
-				// Execute callback
-				$continue = call_user_func($callback, $results);
-
-				// Allow callback to stop iteration by returning false
-				if ($continue === false)
-				{
-					break;
-				}
-
-				$page++;
-			}
-			while (count($results) === $size);
+		if ($size < 1) {
+			throw new DatabaseException("Invalid chunk size (must be >= 1)", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if (!is_callable($callback)) {
+			throw new DatabaseException("Invalid callback function for chunk operation", 1);
 		}
+
+		$page = 1;
+
+		do {
+			$chunkQuery = clone $this;
+			$chunkQuery->limit($size, $page);
+			$results = $chunkQuery->all();
+
+			if (empty($results)) {
+				break;
+			}
+
+			$continue = call_user_func($callback, $results);
+
+			if ($continue === false) {
+				break;
+			}
+
+			$page++;
+		} while (count($results) === $size);
 	}
 
 	/**
@@ -1800,56 +1585,38 @@ class MySQLQuery
 	 */
 	public function sum($column)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for sum operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for sum operation", 1);
+		}
 
-			// Build query with SUM function
-			$query = "SELECT SUM({$column}) as total FROM {$this->froms}";
+		$sql = "SELECT SUM({$column}) as total FROM {$this->froms}";
 
-			// Add WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$query .= " WHERE " . join(" ", $whereParts);
 			}
-
-			// Execute query
-			$result = $this->connector->execute($query);
-
-			if ($result === false)
-			{
-				throw new DatabaseException("Sum query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Get result
-			$row = $result->fetch_assoc();
-
-			return $row['total'] !== null ? (float)$row['total'] : 0.0;
+			$sql .= " WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Sum query failed: " . $this->connector->lastError(), 1);
+		}
+
+		$row = $result->fetch_assoc();
+		return $row['total'] !== null ? (float)$row['total'] : 0.0;
 	}
 
 	/**
@@ -1869,56 +1636,38 @@ class MySQLQuery
 	 */
 	public function avg($column)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for avg operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for avg operation", 1);
+		}
 
-			// Build query with AVG function
-			$query = "SELECT AVG({$column}) as average FROM {$this->froms}";
+		$sql = "SELECT AVG({$column}) as average FROM {$this->froms}";
 
-			// Add WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$query .= " WHERE " . join(" ", $whereParts);
 			}
-
-			// Execute query
-			$result = $this->connector->execute($query);
-
-			if ($result === false)
-			{
-				throw new DatabaseException("Average query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Get result
-			$row = $result->fetch_assoc();
-
-			return $row['average'] !== null ? (float)$row['average'] : 0.0;
+			$sql .= " WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Average query failed: " . $this->connector->lastError(), 1);
+		}
+
+		$row = $result->fetch_assoc();
+		return $row['average'] !== null ? (float)$row['average'] : 0.0;
 	}
 
 	/**
@@ -1938,56 +1687,38 @@ class MySQLQuery
 	 */
 	public function min($column)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for min operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for min operation", 1);
+		}
 
-			// Build query with MIN function
-			$query = "SELECT MIN({$column}) as minimum FROM {$this->froms}";
+		$sql = "SELECT MIN({$column}) as minimum FROM {$this->froms}";
 
-			// Add WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$query .= " WHERE " . join(" ", $whereParts);
 			}
-
-			// Execute query
-			$result = $this->connector->execute($query);
-
-			if ($result === false)
-			{
-				throw new DatabaseException("Min query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Get result
-			$row = $result->fetch_assoc();
-
-			return $row['minimum'];
+			$sql .= " WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Min query failed: " . $this->connector->lastError(), 1);
+		}
+
+		$row = $result->fetch_assoc();
+		return $row['minimum'];
 	}
 
 	/**
@@ -2007,56 +1738,38 @@ class MySQLQuery
 	 */
 	public function max($column)
 	{
-		try
-		{
-			if (empty($column))
-			{
-				throw new DatabaseException("No column provided for max operation", 1);
-			}
+		if (empty($column)) {
+			throw new DatabaseException("No column provided for max operation", 1);
+		}
 
-			// Build query with MAX function
-			$query = "SELECT MAX({$column}) as maximum FROM {$this->froms}";
+		$sql = "SELECT MAX({$column}) as maximum FROM {$this->froms}";
 
-			// Add WHERE clause if exists
-			if (!empty($this->wheres))
-			{
-				$whereParts = array();
-
-				foreach ($this->wheres as $index => $whereClause)
-				{
-					$condition = $whereClause['condition'];
-					$operator = $whereClause['operator'];
-
-					if ($index === 0)
-					{
-						$whereParts[] = $condition;
-					}
-					else
-					{
-						$whereParts[] = "{$operator} {$condition}";
-					}
+		if (!empty($this->wheres)) {
+			$whereParts = array();
+			foreach ($this->wheres as $index => $whereClause) {
+				$condition = $whereClause['condition'];
+				$operator = $whereClause['operator'];
+				if ($index === 0) {
+					$whereParts[] = $condition;
+				} else {
+					$whereParts[] = "{$operator} {$condition}";
 				}
-
-				$query .= " WHERE " . join(" ", $whereParts);
 			}
-
-			// Execute query
-			$result = $this->connector->execute($query);
-
-			if ($result === false)
-			{
-				throw new DatabaseException("Max query failed: " . $this->connector->lastError(), 1);
-			}
-
-			// Get result
-			$row = $result->fetch_assoc();
-
-			return $row['maximum'];
+			$sql .= " WHERE " . join(" ", $whereParts);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+		if ($this->returnSql) {
+			return $sql;
 		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException("Max query failed: " . $this->connector->lastError(), 1);
+		}
+
+		$row = $result->fetch_assoc();
+		return $row['maximum'];
 	}
 
 	/**
@@ -2079,42 +1792,35 @@ class MySQLQuery
 	 */
 	public function whereColumn($column1, $operatorOrColumn2, $column2 = null)
 	{
-		try
+		if (empty($column1))
 		{
-			if (empty($column1))
-			{
-				throw new DatabaseException("No first column provided for whereColumn clause", 1);
-			}
-
-			// Two arguments: whereColumn('col1', 'col2') - defaults to =
-			if ($column2 === null)
-			{
-				$operator = '=';
-				$column2 = $operatorOrColumn2;
-			}
-			// Three arguments: whereColumn('col1', '>', 'col2')
-			else
-			{
-				$operator = $operatorOrColumn2;
-			}
-
-			if (empty($column2))
-			{
-				throw new DatabaseException("No second column provided for whereColumn clause", 1);
-			}
-
-			// Build WHERE column comparison
-			$this->wheres[] = array(
-				'condition' => "{$column1} {$operator} {$column2}",
-				'operator' => 'AND'
-			);
-
-			return $this;
+			throw new DatabaseException("No first column provided for whereColumn clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		// Two arguments: whereColumn('col1', 'col2') - defaults to =
+		if ($column2 === null)
 		{
-			$DatabaseExceptionObject->errorShow();
+			$operator = '=';
+			$column2 = $operatorOrColumn2;
 		}
+		// Three arguments: whereColumn('col1', '>', 'col2')
+		else
+		{
+			$operator = $operatorOrColumn2;
+		}
+
+		if (empty($column2))
+		{
+			throw new DatabaseException("No second column provided for whereColumn clause", 1);
+		}
+
+		// Build WHERE column comparison
+		$this->wheres[] = array(
+			'condition' => "{$column1} {$operator} {$column2}",
+			'operator' => 'AND'
+		);
+
+		return $this;
 	}
 
 	/**
@@ -2136,17 +1842,10 @@ class MySQLQuery
 	 */
 	public function groupBy(...$columns)
 	{
-		try
+		// Validate at least one column provided
+		if (empty($columns))
 		{
-			// Validate at least one column provided
-			if (empty($columns))
-			{
-				throw new DatabaseException("No columns provided for GROUP BY clause", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("No columns provided for GROUP BY clause", 1);
 		}
 
 		// Add columns to groups array
@@ -2177,17 +1876,10 @@ class MySQLQuery
 	 */
 	public function having(...$arguments)
 	{
-		try
+		// Validate argument pairs match
+		if (count($arguments) < 2 || count($arguments) % 2 != 0)
 		{
-			// Validate argument pairs match
-			if (count($arguments) < 2 || count($arguments) % 2 != 0)
-			{
-				throw new DatabaseException("Invalid arguments for HAVING clause", 1);
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid arguments for HAVING clause", 1);
 		}
 
 		// Single argument pair
@@ -2244,23 +1936,16 @@ class MySQLQuery
 	 */
 	public function innerJoin($table, $condition, $fields = array("*"))
 	{
-		try
+		// Validate table is not empty
+		if (empty($table))
 		{
-			// Validate table is not empty
-			if (empty($table))
-			{
-				throw new DatabaseException("Invalid table argument $table passed for the innerJoin Clause", 1);
-			}
-
-			// Validate condition is not empty
-			if (empty($condition))
-			{
-				throw new DatabaseException("Invalid argument $condition passed for the innerJoin Clause", 1);
-			}
+			throw new DatabaseException("Invalid table argument $table passed for the innerJoin Clause", 1);
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
+
+		// Validate condition is not empty
+		if (empty($condition))
 		{
-			$DatabaseExceptionObject->errorShow();
+			throw new DatabaseException("Invalid argument $condition passed for the innerJoin Clause", 1);
 		}
 
 		// Add fields for this table
@@ -2731,65 +2416,30 @@ class MySQLQuery
 	 * @return MySQLResponse Response with insert ID or affected rows
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function save($data, $set_timestamps)
+	public function save($data, $set_timestamps = false)
 	{
-		// Determine if this is insert or update
 		$doInsert = sizeof($this->wheres) == 0;
 
-		// Build query
-		if ($doInsert)
-		{
+		if ($doInsert) {
 			$sql = $this->buildInsert($data, $set_timestamps);
-		}
-		else
-		{
+		} else {
 			$sql = $this->buildUpdate($data, $set_timestamps);
 		}
 
-		// Store query string in response object
-		$this->responseObject->setQueryString($sql);
+		if ($this->returnSql) {
+			return $sql;
+		}
 
-		// Time the query execution
-		$query_start_time = microtime(true);
-
-		// Execute query
 		$result = $this->connector->execute($sql);
 
-		$query_stop_time = microtime(true);
-		$query_excec_time = $query_stop_time - $query_start_time;
-
-		// Store execution time
-		$this->responseObject->setQueryTime($query_excec_time);
-
-		try
-		{
-			// Check for query error
-			if ($result === false)
-			{
-				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
 		}
 
-		// Return response based on operation type
-		if($doInsert)
-		{
-			// INSERT - return insert ID
-			$this->responseObject->setLastInsertId($this->connector->lastInsertId());
-
-			return $this->responseObject;
-		}
-		else
-		{
-			// UPDATE - return affected rows
-			$this->responseObject
-				->setUpdateSuccess(true)
-				->setAffectedRows($this->connector->affectedRows());
-
-			return $this->responseObject;
+		if ($doInsert) {
+			return $this->connector->lastInsertId();
+		} else {
+			return $this->connector->affectedRows();
 		}
 	}
 
@@ -2809,64 +2459,180 @@ class MySQLQuery
 	 */
 	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps = false)
 	{
-		// Determine if this is insert or update
 		$doInsert = sizeof($this->wheres) == 0;
 
-		// Build query
-		if ($doInsert)
-		{
+		if ($doInsert) {
 			$sql = $this->buildBulkInsert($data, $set_timestamps);
-		}
-		else
-		{
+		} else {
 			$sql = $this->buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps);
 		}
 
-		// Store query string in response object
-		$this->responseObject->setQueryString($sql);
+		if ($this->returnSql) {
+			return $sql;
+		}
 
-		// Time the query execution
-		$query_start_time = microtime(true);
-
-		// Execute query
 		$result = $this->connector->execute($sql);
 
-		$query_stop_time = microtime(true);
-		$query_excec_time = $query_stop_time - $query_start_time;
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+		}
 
-		// Store execution time (FIXED TYPO: was $this->setQueryTime)
-		$this->responseObject->setQueryTime($query_excec_time);
+		if ($doInsert) {
+			return $this->connector->lastInsertId();
+		} else {
+			return $this->connector->affectedRows();
+		}
+	}
 
-		try
+	/**
+	 * Insert with INSERT IGNORE (skip duplicates)
+	 *
+	 * Auto-detects single vs bulk insert based on data structure.
+	 * Uses INSERT IGNORE to silently skip duplicate key errors.
+	 * Much faster than checking for duplicates with whereIn() before inserting.
+	 *
+	 * How it Works:
+	 *   - Detects single: ['url' => 'x'] vs bulk: [['url' => 'x'], ['url' => 'y']]
+	 *   - Builds INSERT IGNORE query (instead of INSERT)
+	 *   - Database silently skips rows that violate unique constraints
+	 *   - Returns actual number of inserted rows (excludes skipped duplicates)
+	 *
+	 * Performance:
+	 *   - Old approach: SELECT whereIn() + INSERT (2 queries, slow with large datasets)
+	 *   - New approach: INSERT IGNORE (1 query, fast even with duplicates)
+	 *
+	 * Examples:
+	 *   // Single
+	 *   QueueModel::saveIgnore(['url' => 'https://example.com', 'url_hash' => 'abc123']);
+	 *
+	 *   // Bulk
+	 *   QueueModel::saveIgnore([
+	 *       ['url' => 'https://example.com', 'url_hash' => 'abc123'],
+	 *       ['url' => 'https://test.com', 'url_hash' => 'def456'],
+	 *   ]);
+	 *
+	 * @param array $data Single record or array of records
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return int Number of rows actually inserted (excludes duplicates)
+	 */
+	public function saveIgnore($data, $set_timestamps = false)
+	{
+		// Detect if bulk insert (array of arrays) or single insert (associative array)
+		$isBulk = isset($data[0]) && is_array($data[0]);
+
+		// Build appropriate INSERT IGNORE query
+		if ($isBulk) {
+			$sql = $this->buildBulkInsertIgnore($data, $set_timestamps);
+		} else {
+			$sql = $this->buildInsertIgnore($data, $set_timestamps);
+		}
+
+		if ($this->returnSql) {
+			return $sql;
+		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+		}
+
+		// Return number of rows actually inserted (affected_rows excludes duplicates)
+		return $this->connector->affectedRows();
+	}
+
+	/**
+	 * Build single INSERT IGNORE query (skip duplicates)
+	 *
+	 * Similar to buildInsert() but uses INSERT IGNORE instead of INSERT.
+	 * Duplicate key errors are silently skipped by the database.
+	 *
+	 * Query Template:
+	 *   INSERT IGNORE INTO table (field1, field2, ...) VALUES (val1, val2, ...)
+	 *
+	 * @param array $data Single record to insert
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return string Complete INSERT IGNORE query
+	 */
+	protected function buildInsertIgnore($data, $set_timestamps)
+	{
+		$fields = array();
+		$values = array();
+		$template = "INSERT IGNORE INTO %s (%s) VALUES (%s)";
+
+		// Add timestamp if requested
+		if($set_timestamps)
 		{
-			// Check for query error
-			if ($result === false)
+			$data['date_created'] = date('Y-m-d h:i:s');
+		}
+
+		// Build fields and values
+		foreach ($data as $field => $value)
+		{
+			$fields[] = $field;
+			$values[] = $this->quote($value);
+		}
+
+		// Convert arrays to strings
+		$fields = join(", ", $fields);
+		$values = join(", ", $values);
+
+		// Return complete query
+		return sprintf($template, $this->froms, $fields, $values);
+	}
+
+	/**
+	 * Build INSERT IGNORE query (skip duplicates)
+	 *
+	 * Similar to buildBulkInsert() but uses INSERT IGNORE instead of INSERT.
+	 * Duplicate key errors are silently skipped by the database.
+	 *
+	 * Query Template:
+	 *   INSERT IGNORE INTO table (field1, field2, ...) VALUES (val1, val2, ...), (val3, val4, ...), ...
+	 *
+	 * @param array $data Array of rows to insert
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return string Complete INSERT IGNORE query
+	 */
+	protected function buildBulkInsertIgnore($data, $set_timestamps)
+	{
+		$fields = array();
+		$values = array();
+		$template = "INSERT IGNORE INTO %s (%s) VALUES %s";
+
+		// Get field names from first row
+		$fieldsArray = $data[0];
+
+		foreach ($fieldsArray as $field => $value)
+		{
+			$fields[] = $field;
+		}
+
+		// Get count of rows
+		$count = sizeof($data);
+
+		// Build values for each row
+		for ($i = 0; $i < $count; $i++)
+		{
+			$array = $data[$i];
+			$valuesArray = array();
+
+			// Quote each value
+			foreach ($array as $field => $value)
 			{
-				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
+				$valuesArray[] = $this->quote($value);
 			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+
+			// Group row values in parentheses
+			$values[] = '(' . join(", ", $valuesArray) . ')';
 		}
 
-		// Return response based on operation type
-		if($doInsert)
-		{
-			// INSERT - return insert ID
-			$this->responseObject->setLastInsertId($this->connector->lastInsertId());
+		// Convert arrays to strings
+		$fields = join(", ", $fields);
+		$values = join(", ", $values);
 
-			return $this->responseObject;
-		}
-		else
-		{
-			// UPDATE - return affected rows
-			$this->responseObject
-				->setUpdateSuccess(true)
-				->setAffectedRows($this->connector->affectedRows());
-
-			return $this->responseObject;
-		}
+		// Return complete query
+		return sprintf($template, $this->froms, $fields, $values);
 	}
 
 	/**
@@ -2879,41 +2645,19 @@ class MySQLQuery
 	 */
 	public function delete()
 	{
-		// Build DELETE query
 		$sql = $this->buildDelete();
 
-		// Store query string
-		$this->responseObject->setQueryString($sql);
+		if ($this->returnSql) {
+			return $sql;
+		}
 
-		// Time the query execution
-		$query_start_time = microtime(true);
-
-		// Execute query
 		$result = $this->connector->execute($sql);
 
-		$query_stop_time = microtime(true);
-		$query_excec_time = $query_stop_time - $query_start_time;
-
-		// Store execution time
-		$this->responseObject->setQueryTime($query_excec_time);
-
-		try
-		{
-			// Check for query error
-			if ($result === false)
-			{
-				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
 		}
 
-		// Return affected rows count
-		$this->responseObject->setAffectedRows($this->connector->affectedRows());
-
-		return $this->responseObject;
+		return $this->connector->affectedRows();
 	}
 
 	/**
@@ -2926,34 +2670,14 @@ class MySQLQuery
 	 */
 	public function first()
 	{
-		// Save original limit settings
-		$limit = $this->limits;
-		$limitOffset = $this->offset;
-
-		// Set limit to 1
 		$this->limit(1);
-
-		// Get all results (will be 1 row)
 		$all = $this->all();
 
-		// Extract first result
-		$first = ArrayUtility::first($all->result_array())->get();
-
-		// Restore original limit settings
-		if ($limit)
-		{
-			$this->limits = $limit;
+		if (is_string($all)) {
+			return $all;
 		}
 
-		if ($limitOffset)
-		{
-			$this->offset = $limitOffset;
-		}
-
-		// Store result in response object
-		$this->responseObject->setResultArray($first);
-
-		return $this->responseObject;
+		return isset($all[0]) ? $all[0] : null;
 	}
 
 	/**
@@ -2962,49 +2686,20 @@ class MySQLQuery
 	 * Executes COUNT(1) query to get number of matching rows.
 	 * More efficient than fetching all rows and counting.
 	 *
-	 * @return MySQLResponse Response with row count
+	 * @return int Number of matching rows
 	 */
 	public function count()
 	{
-		// Save original query settings
-		$limit = $this->limits;
-		$limitOffset = $this->offset;
-		$fields = $this->fields;
-
-		// Change to COUNT query
-		$this->fields = array($this->froms => array("COUNT(1)" => "rows"));
-
-		// Set limit to 1
+		$this->fields = array($this->froms => array("COUNT(1)" => "row_count"));
 		$this->limit(1);
 
-		// Get count
-		$row = $this->first()->result_array();
+		$row = $this->first();
 
-		// Restore original field settings
-		$this->fields = $fields;
-
-		if ($fields)
-		{
-			$this->fields = $fields;
+		if (is_string($row)) {
+			return $row;
 		}
 
-		// Restore original limit settings
-		if ($limit)
-		{
-			$this->limits = $limit;
-		}
-
-		if ($limitOffset)
-		{
-			$this->offset = $limitOffset;
-		}
-
-		// Store count in response object
-		$this->responseObject
-			->setNumRows($row[0]['rows'])
-			->setResultArray($row);
-
-		return $this->responseObject;
+		return ($row !== null) ? (int)$row['row_count'] : 0;
 	}
 
 	/**
@@ -3017,54 +2712,24 @@ class MySQLQuery
 	 */
 	public function all()
 	{
-		// Build SELECT query
 		$sql = $this->buildSelect();
 
-		// Store query string
-		$this->query_string = $sql;
+		if ($this->returnSql) {
+			return $sql;
+		}
 
-		// Time the query execution
-		$query_start_time = microtime(true);
-
-		// Execute query
 		$result = $this->connector->execute($sql);
 
-		$query_stop_time = microtime(true);
-		$query_excec_time = $query_stop_time - $query_start_time;
-
-		try
-		{
-			// Check for query error
-			if ($result === false)
-			{
-				$error = $this->connector->lastError();
-
-				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $sql . ') </span>');
-			}
-		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
 		}
 
-		// Fetch all rows
-		$result_array = array();
-
-		while ($row = $result->fetch_array(MYSQLI_ASSOC))
-		{
-			$result_array[] = $row;
+		$results = array();
+		while ($row = $result->fetch_assoc()) {
+			$results[] = $row;
 		}
 
-		// Store results and metadata in response object
-		$this->responseObject
-			->setQueryString($this->query_string)
-			->setQueryTime($query_excec_time)
-			->setFieldCount($result->field_count)
-			->setNumRows($result->num_rows)
-			->setQueryFields($result->fetch_fields())
-			->setResultArray($result_array);
-
-		return $this->responseObject;
+		return $results;
 	}
 
 	/**
@@ -3081,24 +2746,12 @@ class MySQLQuery
 	 */
 	public function rawQuery($query_string)
 	{
-		try
-		{
-			// Execute query
-		 	$result = $this->connector->execute($query_string);
+		$result = $this->connector->execute($query_string);
 
-			// Check for query error
-			if ($result === false)
-			{
-				throw new DatabaseException(get_class(new DatabaseException) . ' ' .$this->connector->lastError() . '<span class="query-string"> (' . $query_string . ') </span>');
-			}
-			else
-			{
-				return $result;
-			}
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query_string . ')');
 		}
-		catch(DatabaseException $DatabaseExceptionObject)
-		{
-			$DatabaseExceptionObject->errorShow();
-		}
+
+		return $result;
 	}
 }
