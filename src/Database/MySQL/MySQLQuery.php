@@ -143,6 +143,22 @@ class MySQLQuery
 	 */
 	protected $returnSql = false;
 
+	/**
+	 * Row-level lock clause (FOR UPDATE, FOR SHARE, etc.)
+	 * @var string
+	 */
+	protected $lockClause = '';
+
+	/**
+	 * Unbuffered query execution flag
+	 *
+	 * When true, uses MYSQLI_USE_RESULT to stream rows one at a time
+	 * instead of loading entire result set into memory.
+	 *
+	 * @var bool
+	 */
+	protected $unbuffered = false;
+
 	// =========================================================================
 	// CONSTRUCTOR
 	// =========================================================================
@@ -184,6 +200,40 @@ class MySQLQuery
 	public function toSql()
 	{
 		$this->returnSql = true;
+		return $this;
+	}
+
+	/**
+	 * Enable unbuffered query execution
+	 *
+	 * Streams results row-by-row instead of loading entire result set into memory.
+	 * Essential for processing large datasets (millions of rows) without memory exhaustion.
+	 *
+	 * Memory comparison:
+	 *   Buffered (default): 100M rows × 60 bytes = 6 GB in memory
+	 *   Unbuffered: 1 row × 60 bytes = 60 bytes in memory at a time
+	 *
+	 * Use for:
+	 *   - Large result sets (millions of rows)
+	 *   - Building graphs/structures incrementally
+	 *   - Export operations
+	 *
+	 * Do NOT use for:
+	 *   - Small result sets (< 10K rows)
+	 *   - When you need result count before processing
+	 *   - Multiple concurrent queries on same connection
+	 *
+	 * Examples:
+	 *   $result = LinkModel::noBuffer()->select(['source', 'target'])->all();
+	 *   while ($row = $result->fetch_assoc()) {
+	 *       // Process one row at a time (minimal memory)
+	 *   }
+	 *
+	 * @return $this For method chaining
+	 */
+	public function noBuffer()
+	{
+		$this->unbuffered = true;
 		return $this;
 	}
 
@@ -497,6 +547,12 @@ class MySQLQuery
 		// Single argument pair (field, value)
 		if (sizeof($arguments) == 2)
 		{
+			// Auto-add '= ?' if no placeholder present (shorthand syntax)
+			if (strpos($arguments[0], '?') === false)
+			{
+				$arguments[0] = $arguments[0] . ' = ?';
+			}
+
 			// Replace ? with %s placeholder
 			$arguments[0] = preg_replace("#\?#", "%s", $arguments[0]);
 
@@ -523,6 +579,12 @@ class MySQLQuery
 			{
 				// Extract one pair
 				$argumentsPair = array_splice($arguments, 0, 2);
+
+				// Auto-add '= ?' if no placeholder present (shorthand syntax)
+				if (strpos($argumentsPair[0], '?') === false)
+				{
+					$argumentsPair[0] = $argumentsPair[0] . ' = ?';
+				}
 
 				// Replace ? with %s placeholder
 				$argumentsPair[0] = preg_replace("#\?#", "%s", $argumentsPair[0]);
@@ -573,6 +635,12 @@ class MySQLQuery
 		// Single argument pair (field, value)
 		if (sizeof($arguments) == 2)
 		{
+			// Auto-add '= ?' if no placeholder present (shorthand syntax)
+			if (strpos($arguments[0], '?') === false)
+			{
+				$arguments[0] = $arguments[0] . ' = ?';
+			}
+
 			// Replace ? with %s placeholder
 			$arguments[0] = preg_replace("#\?#", "%s", $arguments[0]);
 
@@ -599,6 +667,12 @@ class MySQLQuery
 			{
 				// Extract one pair
 				$argumentsPair = array_splice($arguments, 0, 2);
+
+				// Auto-add '= ?' if no placeholder present (shorthand syntax)
+				if (strpos($argumentsPair[0], '?') === false)
+				{
+					$argumentsPair[0] = $argumentsPair[0] . ' = ?';
+				}
 
 				// Replace ? with %s placeholder
 				$argumentsPair[0] = preg_replace("#\?#", "%s", $argumentsPair[0]);
@@ -1135,14 +1209,14 @@ class MySQLQuery
 	 *   - Maintains data consistency
 	 *
 	 * Example:
-	 *   $db->transaction();
+	 *   $db->begin();
 	 *   $db->save(['user_id' => 1, 'amount' => 100]);
 	 *   $db->where('id', 1)->save(['balance' => 'balance - 100']);
 	 *   $db->commit(); // or $db->rollback();
 	 *
 	 * @return bool True on success
 	 */
-	public function transaction()
+	public function begin()
 	{
 		$result = $this->connector->execute("START TRANSACTION");
 
@@ -1161,7 +1235,7 @@ class MySQLQuery
 	 * Call after successful completion of all operations.
 	 *
 	 * Example:
-	 *   $db->transaction();
+	 *   $db->begin();
 	 *   // ... multiple queries ...
 	 *   $db->commit(); // Save all changes
 	 *
@@ -1186,7 +1260,7 @@ class MySQLQuery
 	 * Call when an error occurs or operation needs to be cancelled.
 	 *
 	 * Example:
-	 *   $db->transaction();
+	 *   $db->begin();
 	 *   try {
 	 *       // ... queries ...
 	 *       $db->commit();
@@ -1206,6 +1280,100 @@ class MySQLQuery
 		}
 
 		return true;
+	}
+
+	/**
+	 * Add row-level UPDATE lock (FOR UPDATE)
+	 *
+	 * Applies exclusive lock on selected rows, preventing other transactions
+	 * from reading (with locks) or modifying them. Use when you plan to
+	 * UPDATE or DELETE the rows.
+	 *
+	 * Lock Modes:
+	 *   - null (default): Wait for locked rows to become available
+	 *   - 'skip': Skip locked rows (FOR UPDATE SKIP LOCKED) - ideal for queues
+	 *   - 'nowait': Fail immediately if rows are locked (FOR UPDATE NOWAIT)
+	 *
+	 * Examples:
+	 *   QueueModel::where('status', 'pending')
+	 *             ->updateLock('skip')
+	 *             ->all();
+	 *
+	 *   QueueModel::where('id', 5)
+	 *             ->updateLock()
+	 *             ->first();
+	 *
+	 * Note: Must be used within a transaction for proper isolation.
+	 *
+	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
+	 * @return $this For method chaining
+	 */
+	public function updateLock($mode = null)
+	{
+		$this->lockClause = 'FOR UPDATE';
+
+		if ($mode !== null)
+		{
+			$mode = strtolower($mode);
+
+			if ($mode === 'skip')
+			{
+				$this->lockClause = 'FOR UPDATE SKIP LOCKED';
+			}
+			elseif ($mode === 'nowait')
+			{
+				$this->lockClause = 'FOR UPDATE NOWAIT';
+			}
+		}
+
+		return $this;
+	}
+
+	/**
+	 * Add row-level SHARE lock (FOR SHARE)
+	 *
+	 * Applies shared lock on selected rows, allowing other transactions
+	 * to read but not modify them. Use when you want to ensure data
+	 * doesn't change during your transaction but don't plan to update it.
+	 *
+	 * Lock Modes:
+	 *   - null (default): Wait for locked rows to become available
+	 *   - 'skip': Skip locked rows (FOR SHARE SKIP LOCKED)
+	 *   - 'nowait': Fail immediately if rows are locked (FOR SHARE NOWAIT)
+	 *
+	 * Examples:
+	 *   UserModel::where('id', 5)
+	 *            ->shareLock()
+	 *            ->first();
+	 *
+	 *   ProductModel::where('category', 'electronics')
+	 *               ->shareLock('skip')
+	 *               ->all();
+	 *
+	 * Note: Must be used within a transaction for proper isolation.
+	 *
+	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
+	 * @return $this For method chaining
+	 */
+	public function shareLock($mode = null)
+	{
+		$this->lockClause = 'FOR SHARE';
+
+		if ($mode !== null)
+		{
+			$mode = strtolower($mode);
+
+			if ($mode === 'skip')
+			{
+				$this->lockClause = 'FOR SHARE SKIP LOCKED';
+			}
+			elseif ($mode === 'nowait')
+			{
+				$this->lockClause = 'FOR SHARE NOWAIT';
+			}
+		}
+
+		return $this;
 	}
 
 	// =========================================================================
@@ -1978,7 +2146,7 @@ class MySQLQuery
 	{
 		$fields = array();
 		$where = $order = $limit = $join = $group = $having = "";
-		$template = "SELECT %s %s FROM %s %s %s %s %s %s %s";
+		$template = "SELECT %s %s FROM %s %s %s %s %s %s %s %s";
 
 		// Build fields list
 		foreach ($this->fields as $table => $tableFields)
@@ -2107,7 +2275,7 @@ class MySQLQuery
 		}
 
 		// Return complete query
-		return sprintf($template, $this->distinct, $fields, $this->froms, $join, $where, $group, $having, $order, $limit);
+		return sprintf($template, $this->distinct, $fields, $this->froms, $join, $where, $group, $having, $order, $limit, $this->lockClause);
 	}
 
 	/**
@@ -2459,7 +2627,10 @@ class MySQLQuery
 	 */
 	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps = false)
 	{
-		$doInsert = sizeof($this->wheres) == 0;
+		$doInsert = false;
+
+		//if (sizeof($this->wheres) == 0) $doInsert = true;
+		if ($fields == null) $doInsert = true;
 
 		if ($doInsert) {
 			$sql = $this->buildBulkInsert($data, $set_timestamps);
@@ -2467,7 +2638,7 @@ class MySQLQuery
 			$sql = $this->buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps);
 		}
 
-		if ($this->returnSql) {
+		if ($this->returnSql) { 
 			return $sql;
 		}
 
@@ -2636,6 +2807,135 @@ class MySQLQuery
 	}
 
 	/**
+	 * Bulk increment multiple rows with different values
+	 *
+	 * Efficiently increments fields for multiple records in a single query using CASE statements.
+	 * Much faster than individual increment() calls in a loop.
+	 *
+	 * Generated SQL Example:
+	 *   UPDATE domain_stats
+	 *   SET active_pages = CASE
+	 *           WHEN id = 1 THEN active_pages + 5
+	 *           WHEN id = 2 THEN active_pages + 3
+	 *           ELSE active_pages
+	 *       END,
+	 *       failed_pages = CASE
+	 *           WHEN id = 1 THEN failed_pages + 2
+	 *           ELSE failed_pages
+	 *       END
+	 *   WHERE id IN (1, 2)
+	 *
+	 * @param array $data Data keyed by ID: [id => ['field' => incrementValue]]
+	 * @param array $fields Array of field names to increment
+	 * @param array $ids Array of IDs to update
+	 * @param string $key Key column name (default: 'id')
+	 * @return int Number of rows affected
+	 * @throws DatabaseException If query execution fails
+	 */
+	public function incrementBulk($data, $fields, $ids, $key = 'id')
+	{
+		if (empty($data) || empty($fields) || empty($ids)) {
+			return 0;
+		}
+
+		// Build CASE statement for each field
+		$setClauses = [];
+		foreach ($fields as $field) {
+			$cases = [];
+			foreach ($data as $id => $values) {
+				$amount = (int)($values[$field] ?? 0);
+				if ($amount > 0) {
+					$cases[] = "WHEN {$key} = {$id} THEN {$field} + {$amount}";
+				}
+			}
+
+			if (!empty($cases)) {
+				$caseStmt = implode(' ', $cases);
+				$setClauses[] = "{$field} = CASE {$caseStmt} ELSE {$field} END";
+			}
+		}
+
+		if (empty($setClauses)) {
+			return 0;
+		}
+
+		$setClause = implode(', ', $setClauses);
+		$whereClause = "{$key} IN (" . implode(',', array_map('intval', $ids)) . ")";
+
+		$sql = "UPDATE {$this->froms} SET {$setClause} WHERE {$whereClause}";
+
+		if ($this->returnSql) {
+			return $sql;
+		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+		}
+
+		return $this->connector->affectedRows();
+	}
+
+	/**
+	 * Bulk decrement fields for multiple records
+	 *
+	 * Efficiently decrements fields for multiple records in a single query.
+	 * Mirrors incrementBulk but subtracts values instead.
+	 *
+	 * @param array $data Data keyed by ID: [id => ['field' => decrementValue]]
+	 * @param array $fields Array of field names to decrement
+	 * @param array $ids Array of IDs to update
+	 * @param string $key Key column name (default: 'id')
+	 * @return int Number of rows affected
+	 * @throws DatabaseException If query execution fails
+	 */
+	public function decrementBulk($data, $fields, $ids, $key = 'id')
+	{
+		if (empty($data) || empty($fields) || empty($ids)) {
+			return 0;
+		}
+
+		// Build CASE statement for each field
+		$setClauses = [];
+		foreach ($fields as $field) {
+			$cases = [];
+			foreach ($data as $id => $values) {
+				$amount = (int)($values[$field] ?? 0);
+				if ($amount > 0) {
+					$cases[] = "WHEN {$key} = {$id} THEN {$field} - {$amount}";
+				}
+			}
+
+			if (!empty($cases)) {
+				$caseStmt = implode(' ', $cases);
+				$setClauses[] = "{$field} = CASE {$caseStmt} ELSE {$field} END";
+			}
+		}
+
+		if (empty($setClauses)) {
+			return 0;
+		}
+
+		$setClause = implode(', ', $setClauses);
+		$whereClause = "{$key} IN (" . implode(',', array_map('intval', $ids)) . ")";
+
+		$sql = "UPDATE {$this->froms} SET {$setClause} WHERE {$whereClause}";
+
+		if ($this->returnSql) {
+			return $sql;
+		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+		}
+
+		return $this->connector->affectedRows();
+	}
+
+	/**
 	 * Execute DELETE query
 	 *
 	 * Deletes records matching WHERE conditions.
@@ -2718,18 +3018,33 @@ class MySQLQuery
 			return $sql;
 		}
 
-		$result = $this->connector->execute($sql);
+		// Execute query (buffered or unbuffered based on flag)
+		if ($this->unbuffered) {
+			// Unbuffered mode: Return mysqli_result for streaming
+			$result = $this->connector->executeUnbuffered($sql);
 
-		if ($result === false) {
-			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+			if ($result === false) {
+				throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+			}
+
+			// Return mysqli_result directly (user iterates with fetch_assoc())
+			return $result;
+		} 
+		else {
+			// Buffered mode: Load all results into array (default behavior)
+			$result = $this->connector->execute($sql);
+
+			if ($result === false) {
+				throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+			}
+
+			$results = array();
+			while ($row = $result->fetch_assoc()) {
+				$results[] = $row;
+			}
+
+			return $results;
 		}
-
-		$results = array();
-		while ($row = $result->fetch_assoc()) {
-			$results[] = $row;
-		}
-
-		return $results;
 	}
 
 	/**
@@ -2747,6 +3062,38 @@ class MySQLQuery
 	public function rawQuery($query_string)
 	{
 		$result = $this->connector->execute($query_string);
+
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query_string . ')');
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Execute unbuffered raw SQL query
+	 *
+	 * Executes query in unbuffered mode (MYSQLI_USE_RESULT) which fetches rows
+	 * one at a time instead of loading all results into memory. Essential for
+	 * exporting large tables without memory exhaustion.
+	 *
+	 * Use this for:
+	 * - SELECT queries on tables with millions of rows
+	 * - Export/backup operations
+	 * - Any operation that processes large result sets
+	 *
+	 * Do NOT use for:
+	 * - Small result sets (< 10K rows) - buffered is fine
+	 * - Queries where you need num_rows before fetching
+	 * - Multiple concurrent queries on same connection
+	 *
+	 * @param string $query_string SQL query to execute
+	 * @return mysqli_result Unbuffered result set
+	 * @throws DatabaseException If query fails
+	 */
+	public function rawQueryUnbuffered($query_string)
+	{
+		$result = $this->connector->executeUnbuffered($query_string);
 
 		if ($result === false) {
 			throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query_string . ')');
