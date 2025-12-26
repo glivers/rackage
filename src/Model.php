@@ -11,7 +11,7 @@
  *   Internally creates instances to isolate query state per call.
  *   This prevents state pollution between different model queries.
  *
- * Access Pattern:
+ * Access Pattern: 
  *
  *   In Application Models:
  *     <?php namespace Models;
@@ -241,6 +241,55 @@ class Model
 		$instance = new static;
 		$instance->setTable();
 		return $instance->Query()->toSql();
+	}
+
+	/**
+	 * Enable unbuffered query execution
+	 *
+	 * Streams results row-by-row instead of loading entire result set into memory.
+	 * Essential for processing large datasets (millions of rows) without memory exhaustion.
+	 *
+	 * Memory comparison:
+	 *   Buffered (default):  100M rows × 60 bytes = 6 GB in memory
+	 *   Unbuffered:          1 row × 60 bytes = 60 bytes in memory at a time
+	 *
+	 * Use for:
+	 *   - Large result sets (millions of rows)
+	 *   - Building graphs/structures incrementally
+	 *   - Export/backup operations
+	 *   - Processing data that doesn't fit in memory
+	 *
+	 * Do NOT use for:
+	 *   - Small result sets (< 10K rows) - buffered is faster
+	 *   - When you need result count before processing
+	 *   - Multiple concurrent queries on same connection
+	 *
+	 * Examples:
+	 *   // PageRank: Process 100M links without loading all into memory
+	 *   $result = LinkModel::noBuffer()->select(['source', 'target'])->all();
+	 *   while ($row = $result->fetch_assoc()) {
+	 *       // Build graph incrementally (only 1 row in memory at a time)
+	 *       $graph['inbound'][$row['target']][] = $row['source'];
+	 *   }
+	 *
+	 *   // Export: Stream large table to file
+	 *   $result = UserModel::noBuffer()->select(['id', 'email'])->all();
+	 *   while ($row = $result->fetch_assoc()) {
+	 *       fputcsv($file, $row);
+	 *   }
+	 *
+	 * IMPORTANT:
+	 *   - Returns mysqli_result object, NOT array
+	 *   - Use fetch_assoc() in while loop to iterate
+	 *   - Cannot use result_array() (defeats the purpose)
+	 *
+	 * @return static Returns query builder instance in unbuffered mode
+	 */
+	final public static function noBuffer()
+	{
+		$instance = new static;
+		$instance->setTable();
+		return $instance->Query()->noBuffer();
 	}
 
 	/**
@@ -476,6 +525,88 @@ class Model
 
 		// Execute bulk insert or update
 		$result = $instance->Query()->saveBulk($data, $fields, $ids, $key, static::$timestamps);
+
+		return $result;
+	}
+
+	/**
+	 * Bulk increment multiple rows with different values
+	 *
+	 * Efficiently increments fields for multiple records in a single query using CASE statements.
+	 * Much faster than individual increment() calls in a loop.
+	 *
+	 * Examples:
+	 *   // Increment single field
+	 *   DomainModel::incrementBulk(
+	 *       [
+	 *           1 => ['total_pages' => 5],
+	 *           2 => ['total_pages' => 3],
+	 *           3 => ['total_pages' => 8]
+	 *       ],
+	 *       ['total_pages'],
+	 *       [1, 2, 3],
+	 *       'id'
+	 *   );
+	 *
+	 *   // Increment multiple fields per row
+	 *   DomainModel::incrementBulk(
+	 *       [
+	 *           1 => ['active_pages' => 5, 'failed_pages' => 2],
+	 *           2 => ['active_pages' => 3]
+	 *       ],
+	 *       ['active_pages', 'failed_pages'],
+	 *       [1, 2],
+	 *       'id'
+	 *   );
+	 *
+	 * @param array $data Data keyed by ID: [id => ['field' => incrementValue]]
+	 * @param array $fields Array of field names to increment
+	 * @param array $ids Array of IDs to update
+	 * @param string $key Key column name (default: 'id')
+	 * @return int Number of rows affected
+	 */
+	final public static function incrementBulk($data, $fields, $ids, $key = 'id')
+	{
+		$instance = new static;
+		$instance->setTable();
+
+		// Execute bulk increment
+		$result = $instance->Query()->incrementBulk($data, $fields, $ids, $key);
+
+		return $result;
+	}
+
+	/**
+	 * Bulk decrement fields for multiple records
+	 *
+	 * Efficiently decrements fields for multiple records in a single query.
+	 * Mirrors incrementBulk but subtracts values instead.
+	 *
+	 * Examples:
+	 *   // Decrement active_pages for multiple domains
+	 *   DomainModel::decrementBulk(
+	 *       [
+	 *           1 => ['active_pages' => 5],
+	 *           2 => ['active_pages' => 3],
+	 *       ],
+	 *       ['active_pages'],
+	 *       [1, 2],
+	 *       'id'
+	 *   );
+	 *
+	 * @param array $data Data keyed by ID: [id => ['field' => decrementValue]]
+	 * @param array $fields Array of field names to decrement
+	 * @param array $ids Array of IDs to update
+	 * @param string $key Key column name (default: 'id')
+	 * @return int Number of rows affected
+	 */
+	final public static function decrementBulk($data, $fields, $ids, $key = 'id')
+	{
+		$instance = new static;
+		$instance->setTable();
+
+		// Execute bulk decrement
+		$result = $instance->Query()->decrementBulk($data, $fields, $ids, $key);
 
 		return $result;
 	}
@@ -852,6 +983,32 @@ class Model
 		return $instance->Query()->rawQuery($query_string);
 	}
 
+	/**
+	 * Execute unbuffered raw SQL query
+	 *
+	 * Executes query in unbuffered mode for memory-efficient processing of large
+	 * result sets. Fetches rows one at a time instead of loading all into memory.
+	 *
+	 * Critical for:
+	 * - Exporting tables with millions of rows
+	 * - Processing large datasets without memory exhaustion
+	 * - Backup operations on production databases
+	 *
+	 * Example:
+	 *   $result = Model::rawQueryUnbuffered("SELECT * FROM large_table");
+	 *   while ($row = $result->fetch_assoc()) {
+	 *       // Process one row at a time (minimal memory)
+	 *   }
+	 *
+	 * @param string $query_string SQL query to execute
+	 * @return mysqli_result Unbuffered result set
+	 */
+	final public static function rawQueryUnbuffered($query_string)
+	{
+		$instance = new static;
+		return $instance->Query()->rawQueryUnbuffered($query_string);
+	}
+
 	// =========================================================================
 	// CORE 12 FEATURES - Advanced Query Builder Methods
 	// =========================================================================
@@ -1147,16 +1304,16 @@ class Model
 	 * Starts a transaction to group multiple queries atomically.
 	 *
 	 * Example:
-	 *   Posts::transaction();
+	 *   Posts::begin();
 	 *   Posts::save(['title' => 'New Post']);
 	 *   Posts::commit(); // or Posts::rollback();
 	 *
 	 * @return bool True on success
 	 */
-	final public static function transaction()
+	final public static function begin()
 	{
 		$instance = new static;
-		return $instance->Query()->transaction();
+		return $instance->Query()->begin();
 	}
 
 	/**
@@ -1165,7 +1322,7 @@ class Model
 	 * Saves all changes made during the transaction.
 	 *
 	 * Example:
-	 *   Posts::transaction();
+	 *   Posts::begin();
 	 *   // ... multiple queries ...
 	 *   Posts::commit();
 	 *
@@ -1183,7 +1340,7 @@ class Model
 	 * Cancels all changes made during the transaction.
 	 *  
 	 * Example:
-	 *   Posts::transaction();
+	 *   Posts::begin();
 	 *   try {
 	 *       // ... queries ...
 	 *       Posts::commit();
@@ -1197,6 +1354,48 @@ class Model
 	{
 		$instance = new static;
 		return $instance->Query()->rollback();
+	}
+
+	/**
+	 * Add row-level UPDATE lock (FOR UPDATE)
+	 *
+	 * Applies exclusive lock on selected rows within a transaction.
+	 * Must be chained before all() or first() execution methods.
+	 *
+	 * Examples:
+	 *   QueueModel::where('status', 'pending')
+	 *             ->updateLock('skip')
+	 *             ->all();
+	 *
+	 *   Posts::where('id', 5)->updateLock()->first();
+	 *
+	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
+	 * @return object Query instance (chainable)
+	 */
+	final public function updateLock($mode = null)
+	{
+		return $this->Query()->updateLock($mode);
+	}
+
+	/**
+	 * Add row-level SHARE lock (FOR SHARE)
+	 *
+	 * Applies shared lock on selected rows within a transaction.
+	 * Must be chained before all() or first() execution methods.
+	 *
+	 * Examples:
+	 *   UserModel::where('id', 5)->shareLock()->first();
+	 *
+	 *   ProductModel::where('category', 'electronics')
+	 *               ->shareLock('skip')
+	 *               ->all();
+	 *
+	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
+	 * @return object Query instance (chainable)
+	 */
+	final public function shareLock($mode = null)
+	{
+		return $this->Query()->shareLock($mode);
 	}
 
 	// =========================================================================
