@@ -583,6 +583,77 @@ class MySQL {
 		}
 	}
 
+	/**
+	 * Execute query in unbuffered mode (MYSQLI_USE_RESULT)
+	 *
+	 * Fetches rows one at a time from the server instead of loading all results
+	 * into memory. Critical for large result sets (millions of rows) to prevent
+	 * memory exhaustion.
+	 *
+	 * IMPORTANT NOTES:
+	 * - You MUST fetch ALL rows or call free() before running another query
+	 * - Memory usage stays constant regardless of result set size
+	 * - Ideal for export operations on large tables
+	 *
+	 * Performance:
+	 * - Network transfer speed: Same as buffered
+	 * - Memory usage: ~1KB (current row only) vs 100GB+ (buffered)
+	 * - Processing: Starts immediately vs waits for all rows
+	 *
+	 * @param string $sql SQL query
+	 * @return mysqli_result|bool Result object or false
+	 * @throws DatabaseException If not connected or query fails
+	 */
+	public function executeUnbuffered($sql)
+	{
+		try
+		{
+			// Require valid connection
+			if (!$this->validService()){
+				throw new DatabaseException("Not connected to a valid database service");
+			}
+
+			// Execute query with auto-reconnect on "server has gone away"
+			try
+			{
+				// Use real_query() + use_result() for unbuffered mode
+				$success = $this->service->real_query($sql);
+
+				if (!$success) {
+					return false;
+				}
+
+				// use_result() returns unbuffered result (fetches one row at a time)
+				$result = $this->service->use_result();
+				return $result;
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Check for "MySQL server has gone away" error (2006)
+				if ($this->service->errno == 2006){
+					// Attempt to reconnect and retry query once
+					if ($this->ping()) {
+						$success = $this->service->real_query($sql);
+						if ($success) {
+							return $this->service->use_result();
+						}
+						return false;
+					}
+					else{
+						throw $e; // Reconnection failed, re-throw
+					}
+				}
+				else {
+					throw $e; // Different error, re-throw
+				}
+			}
+		}
+		catch(DatabaseException $exception) {
+			$exception->errorShow();
+			throw $exception; // Re-throw so caller knows it failed
+		}
+	}
+
 	// =========================================================================
 	// SQL INJECTION PREVENTION
 	// =========================================================================
