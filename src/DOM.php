@@ -663,9 +663,21 @@ class DOM
 		$doc = clone $this->document;
 		$xpath = new \DOMXPath($doc);
 
-		// Remove script and style elements
-		$nodesToRemove = $xpath->query('//script | //style | //nav | //header | //footer');
+		// Remove non-content elements
+		$nodesToRemove = $xpath->query('//script | //style | //nav | //header | //footer | //aside | //noscript');
 		foreach ($nodesToRemove as $node) {
+			$node->parentNode->removeChild($node);
+		}
+
+		// Remove skip links and screen reader elements
+		$skipLinks = $xpath->query(
+			'//*[contains(@class, "skip")] | ' .
+			'//*[contains(@class, "sr-only")] | ' .
+			'//*[contains(@class, "screen-reader")] | ' .
+			'//*[contains(@class, "visually-hidden")] | ' .
+			'//a[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "skip to")]'
+		);
+		foreach ($skipLinks as $node) {
 			$node->parentNode->removeChild($node);
 		}
 
@@ -679,11 +691,11 @@ class DOM
 		// Get all text content from body
 		$text = $body->textContent;
 
-		// Clean whitespace while preserving natural paragraph breaks
-		$text = preg_replace('/[ \t]+/u', ' ', $text);        // Multiple spaces/tabs → single space
-		$text = preg_replace('/\n[ \t]+/u', "\n", $text);     // Remove spaces after newlines
-		$text = preg_replace('/[ \t]+\n/u', "\n", $text);     // Remove spaces before newlines
-		$text = preg_replace('/\n{3,}/u', "\n\n", $text);     // Max 2 consecutive newlines
+		// Clean whitespace, preserve paragraph breaks
+		$text = preg_replace('/[^\S\n]+/u', ' ', $text);       // Non-newline whitespace → space
+		$text = preg_replace('/\n+/u', "\n", $text);           // Multiple newlines → single
+		$text = preg_replace('/ ?\n ?/u', "\n", $text);        // Trim spaces around newlines
+		$text = preg_replace('/(\n ?){2,}/u', "\n\n", $text);  // 2+ newlines → paragraph break
 
 		return trim($text);
 	}
@@ -910,6 +922,8 @@ class DOM
 			$src = $node->attr('src');
 			$alt = $node->attr('alt');
 			$title = $node->attr('title');
+			$width = $node->attr('width');
+			$height = $node->attr('height');
 
 			// Skip empty src
 			if (empty($src)) {
@@ -924,11 +938,198 @@ class DOM
 			$images[] = [
 				'src' => $src,
 				'alt' => $alt,
-				'title' => $title
+				'title' => $title,
+				'width' => $width ?: null,
+				'height' => $height ?: null
 			];
 		});
 
 		return $images;
+	}
+
+	/**
+	 * Get detailed image data with comprehensive metadata
+	 *
+	 * Returns images with full context: position, caption, placement,
+	 * surrounding text, link information, etc.
+	 *
+	 * Similar to linkDetails() - use this for search indexing, use images()
+	 * for simple extraction.
+	 *
+	 * Options:
+	 *   - context_words: Number of words to extract around image (default: 20)
+	 *   - min_size: Skip images smaller than this (width/height, default: 0)
+	 *
+	 * Examples:
+	 *   $images = $dom->imageDetails();
+	 *   $images = $dom->imageDetails(['context_words' => 30, 'min_size' => 100]);
+	 *
+	 * @param array $options Configuration options
+	 * @return array Array of images with full metadata
+	 */
+	public function imageDetails($options = [])
+	{
+		// Default options
+		$defaults = [
+			'context_words' => 20,
+			'min_size' => 0,
+		];
+		$options = array_merge($defaults, $options);
+
+		$images = [];
+		$imgNodes = $this->xpath->query("//img[@src]");
+		$position = 1;
+
+		foreach ($imgNodes as $img) {
+			$src = trim($img->getAttribute('src'));
+			$alt = trim($img->getAttribute('alt'));
+			$title = trim($img->getAttribute('title'));
+			$width = $img->getAttribute('width') ?: null;
+			$height = $img->getAttribute('height') ?: null;
+
+			// Skip empty src
+			if (empty($src)) {
+				continue;
+			}
+
+			// Skip tiny images (icons, spacers)
+			if ($options['min_size'] > 0) {
+				if (($width && $width < $options['min_size']) ||
+				    ($height && $height < $options['min_size'])) {
+					continue;
+				}
+			}
+
+			// Convert to absolute URL
+			$src = $this->absUrl($src);
+
+			// Check if image is wrapped in <a> tag
+			$parent = $img->parentNode;
+			$isLink = false;
+			$linkUrl = null;
+			if ($parent && strtolower($parent->nodeName) === 'a') {
+				$isLink = true;
+				$linkUrl = $parent->getAttribute('href');
+				if ($linkUrl) {
+					$linkUrl = $this->absUrl($linkUrl);
+				}
+			}
+
+			// Check if image is in <figure>, extract <figcaption>
+			$caption = null;
+			$figureParent = $img->parentNode;
+			if ($figureParent && strtolower($figureParent->nodeName) === 'a') {
+				// If wrapped in <a>, check grandparent for <figure>
+				$figureParent = $figureParent->parentNode;
+			}
+			if ($figureParent && strtolower($figureParent->nodeName) === 'figure') {
+				// Find figcaption sibling
+				$figcaptionNodes = $this->xpath->query(".//figcaption", $figureParent);
+				if ($figcaptionNodes->length > 0) {
+					$caption = trim($figcaptionNodes->item(0)->textContent);
+				}
+			}
+
+			// Detect placement (content, header, sidebar, footer, navigation)
+			$placement = $this->detectContextType($img);
+
+			// Extract surrounding text context
+			$contextText = null;
+			if ($placement === 'content') {
+				$contextText = $this->extractSurroundingContext($img, $options['context_words']);
+			}
+
+			$images[] = [
+				'src' => $src,
+				'alt' => $alt ?: null,
+				'title' => $title ?: null,
+				'width' => $width,
+				'height' => $height,
+				'position' => $position,
+				'context_text' => $contextText,
+				'caption' => $caption,
+				'is_link' => $isLink,
+				'link_url' => $linkUrl,
+				'placement' => $placement,
+			];
+
+			$position++;
+		}
+
+		return $images;
+	}
+
+	/**
+	 * Check if page has mobile viewport tag
+	 *
+	 * Returns true if page has <meta name="viewport"> tag,
+	 * which is the primary signal for mobile-friendliness.
+	 *
+	 * Examples:
+	 *   $isMobile = $dom->hasViewport();  // true/false
+	 *
+	 * @return bool True if has viewport meta tag
+	 */
+	public function hasViewport()
+	{
+		$viewportTags = $this->xpath->query("//meta[@name='viewport']");
+		return $viewportTags->length > 0;
+	}
+
+	/**
+	 * Get favicon URL from page
+	 *
+	 * Checks multiple sources in order of preference:
+	 *   1. <link rel="icon">
+	 *   2. <link rel="shortcut icon">
+	 *   3. <link rel="apple-touch-icon">
+	 *   4. Default /favicon.ico
+	 *
+	 * Returns absolute URL or null if no favicon found.
+	 *
+	 * Examples:
+	 *   $favicon = $dom->favicon();
+	 *
+	 * @return string|null Favicon URL (absolute) or null
+	 */
+	public function favicon()
+	{
+		// Check <link rel="icon">
+		$iconLinks = $this->xpath->query("//link[@rel='icon']");
+		if ($iconLinks->length > 0) {
+			$href = $iconLinks->item(0)->getAttribute('href');
+			if ($href) {
+				return $this->absUrl($href);
+			}
+		}
+
+		// Check <link rel="shortcut icon">
+		$shortcutLinks = $this->xpath->query("//link[@rel='shortcut icon']");
+		if ($shortcutLinks->length > 0) {
+			$href = $shortcutLinks->item(0)->getAttribute('href');
+			if ($href) {
+				return $this->absUrl($href);
+			}
+		}
+
+		// Check <link rel="apple-touch-icon">
+		$appleLinks = $this->xpath->query("//link[@rel='apple-touch-icon']");
+		if ($appleLinks->length > 0) {
+			$href = $appleLinks->item(0)->getAttribute('href');
+			if ($href) {
+				return $this->absUrl($href);
+			}
+		}
+
+		// Default fallback: /favicon.ico
+		if ($this->baseUrl) {
+			$parsed = parse_url($this->baseUrl);
+			if (isset($parsed['scheme']) && isset($parsed['host'])) {
+				return $parsed['scheme'] . '://' . $parsed['host'] . '/favicon.ico';
+			}
+		}
+
+		return null;
 	}
 
 	// =========================================================================
@@ -1371,6 +1572,10 @@ class DOM
 
 			// Resolve to absolute URL
 			$absoluteUrl = $this->absUrl($href);
+
+			// Strip fragment identifier (#section) - same page, different scroll position
+			// URLs like /page#section1 and /page#section2 are the same HTML document
+			$absoluteUrl = preg_replace('/#.*$/', '', $absoluteUrl);
 
 			// Extract link data
 			$linkData = $this->analyzeLinkNode($link, $absoluteUrl, $position, $options);
