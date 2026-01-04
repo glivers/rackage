@@ -628,6 +628,93 @@ class Template {
 	}
 
 	/**
+	 * Compile @php statements.
+	 *
+	 * Opens a raw PHP block. Use for complex logic that doesn't
+	 * fit cleanly into template directives.
+	 *
+	 * Usage:
+	 *   @php
+	 *       $total = array_sum($prices);
+	 *       $formatted = number_format($total, 2);
+	 *   @endphp
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compilePhp($expression)
+	{
+		return '<?php ';
+	}
+
+	/**
+	 * Compile @endphp statements.
+	 *
+	 * Closes a raw PHP block opened with @php.
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileEndphp($expression)
+	{
+		return ' ?>';
+	}
+
+	/**
+	 * Compile @break statements.
+	 *
+	 * Breaks out of a loop. Can be used with optional condition.
+	 *
+	 * Usage:
+	 *   @foreach($users as $user)
+	 *       @break($user->id === $targetId)
+	 *       {{ $user->name }}
+	 *   @endforeach
+	 *
+	 * Or unconditionally:
+	 *   @break
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileBreak($expression)
+	{
+		if ($expression) {
+
+			return "<?php if{$expression}: break; endif; ?>";
+		}
+
+		return '<?php break; ?>';
+	}
+
+	/**
+	 * Compile @continue statements.
+	 *
+	 * Skips to next iteration of a loop. Can be used with optional condition.
+	 *
+	 * Usage:
+	 *   @foreach($users as $user)
+	 *       @continue($user->inactive)
+	 *       {{ $user->name }}
+	 *   @endforeach
+	 *
+	 * Or unconditionally:
+	 *   @continue
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileContinue($expression)
+	{
+		if ($expression) {
+
+			return "<?php if{$expression}: continue; endif; ?>";
+		}
+
+		return '<?php continue; ?>';
+	}
+
+	/**
 	 * Compile @include statements.
 	 *
 	 * @param string $pathExpression
