@@ -1,5 +1,5 @@
 <?php namespace Rackage\Database\MySQL;
-
+ 
 /**
  * MySQL Query Builder
  *
@@ -43,6 +43,7 @@
  */
 
 use Rackage\Arr;
+use Rackage\Database\MySQL\MySQLAsync;
 use Rackage\Database\MySQL\MySQLResponse;
 use Rackage\Database\DatabaseException;
 
@@ -75,7 +76,7 @@ class MySQLQuery
 	 * Table name for query
 	 * @var string
 	 */
-	protected $froms; 
+	protected $from; 
 
 	/**
 	 * Fields to select (multidimensional array: table => [fields])
@@ -87,7 +88,7 @@ class MySQLQuery
 	 * Maximum number of rows to return
 	 * @var int
 	 */
-	protected $limits;
+	protected $limit;
 
 	/**
 	 * Row offset for pagination
@@ -99,7 +100,7 @@ class MySQLQuery
 	 * ORDER BY clauses (array of ['column' => 'direction'])
 	 * @var array
 	 */
-	protected $orders = array();
+	protected $order = array();
 
 	/**
 	 * DISTINCT keyword for unique results
@@ -111,25 +112,25 @@ class MySQLQuery
 	 * GROUP BY columns
 	 * @var array
 	 */
-	protected $groups = array();
+	protected $group = array();
 
 	/**
 	 * HAVING conditions (for grouped queries)
 	 * @var array
 	 */
-	protected $havings = array();
+	protected $having = array();
 
 	/**
 	 * JOIN clauses (tables and conditions)
 	 * @var array
 	 */
-	protected $joins = array();
+	protected $join = array();
 
 	/**
 	 * WHERE conditions (stores ['condition' => ..., 'operator' => 'AND'|'OR'])
 	 * @var array
 	 */
-	protected $wheres = array();
+	protected $where = array();
 
 	/**
 	 * Query string property; stores dynamically generated queries
@@ -158,6 +159,16 @@ class MySQLQuery
 	 * @var bool
 	 */
 	protected $unbuffered = false;
+
+	/**
+	 * Async mode flag
+	 *
+	 * When true, terminal methods (all, first, count, etc.) fire query
+	 * with MYSQLI_ASYNC and return a Promise instead of blocking.
+	 *
+	 * @var bool
+	 */
+	protected $async = false;
 
 	// =========================================================================
 	// CONSTRUCTOR
@@ -234,6 +245,39 @@ class MySQLQuery
 	public function noBuffer()
 	{
 		$this->unbuffered = true;
+		return $this;
+	}
+
+	/**
+	 * Enable async query execution
+	 *
+	 * When enabled, terminal methods (all, first, count, delete, save)
+	 * fire the query with MYSQLI_ASYNC and return a Promise instead
+	 * of blocking for the result.
+	 *
+	 * Call await() on the Promise to get the actual result.
+	 *
+	 * Limitations:
+	 *   - One async query at a time per connection
+	 *   - Must await() before starting another async query
+	 *   - Cannot be combined with noBuffer()
+	 *
+	 * Examples:
+	 *   // Fire query, do other work, then get result
+	 *   $promise = PageModel::async()->where('status', 'active')->all();
+	 *   $otherData = doSomethingElse();
+	 *   $pages = $promise->await();
+	 *
+	 *   // Check if ready without blocking
+	 *   if ($promise->ready()) {
+	 *       $pages = $promise->await();
+	 *   }
+	 *
+	 * @return $this For method chaining
+	 */
+	public function async()
+	{
+		$this->async = true;
 		return $this;
 	}
 
@@ -331,19 +375,13 @@ class MySQLQuery
 	public function setTable($table)
 	{
 		// Validate table name is not empty
-		if (empty($table))
-		{
-			throw new DatabaseException("Invalid argument passed for table name", 1);
-		}
+		if (empty($table)) throw new DatabaseException("Invalid argument passed for table name", 1);
 
 		// Set table name
-		$this->froms = $table;
+		$this->from = $table;
 
 		// Initialize fields if not set
-		if(!isset($this->fields[$table]))
-		{
-			$this->fields[$table] = array("*");
-		}
+		if(!isset($this->fields[$table])) $this->fields[$table] = array("*");
 
 		return $this;
 	}
@@ -367,7 +405,7 @@ class MySQLQuery
 		}
 
 		// Set table and fields
-		$this->froms = $table;
+		$this->from = $table;
 		$this->fields[$table] = $fields;
 
 		return $this;
@@ -389,7 +427,7 @@ class MySQLQuery
 	public function select($fields = array("*"))
 	{
 		// Delegate to setFields() using the current table
-		return $this->setFields($this->froms, $fields);
+		return $this->setFields($this->from, $fields);
 	}
 
 	/**
@@ -426,9 +464,9 @@ class MySQLQuery
 		$this->fields += array($table => $fields);
 
 		// Store join table, condition, and type
-		$this->joins['tables'][] = $table;
-		$this->joins['conditions'][] = $condition;
-		$this->joins['types'][] = 'LEFT';  // Mark as LEFT JOIN
+		$this->join['tables'][] = $table;
+		$this->join['conditions'][] = $condition;
+		$this->join['types'][] = 'LEFT';  // Mark as LEFT JOIN
 
 		return $this;
 	}
@@ -459,7 +497,7 @@ class MySQLQuery
 		}
 
 		// Set limit
-		$this->limits = $limit;
+		$this->limit = $limit;
 
 		// Calculate offset for pagination
 		$this->offset = (int)$limit * ($page - 1);
@@ -509,7 +547,7 @@ class MySQLQuery
 		}
 
 		// Add order clause to array (supports multiple ORDER BY)
-		$this->orders[$order] = $direction;
+		$this->order[$order] = $direction;
 
 		return $this;
 	}
@@ -548,10 +586,7 @@ class MySQLQuery
 		if (sizeof($arguments) == 2)
 		{
 			// Auto-add '= ?' if no placeholder present (shorthand syntax)
-			if (strpos($arguments[0], '?') === false)
-			{
-				$arguments[0] = $arguments[0] . ' = ?';
-			}
+			if (strpos($arguments[0], '?') === false) $arguments[0] = $arguments[0] . ' = ?';
 
 			// Replace ? with %s placeholder
 			$arguments[0] = preg_replace("#\?#", "%s", $arguments[0]);
@@ -560,7 +595,7 @@ class MySQLQuery
 			$arguments[1] = $this->quote($arguments[1]);
 
 			// Build WHERE clause with sprintf and store with AND operator
-			$this->wheres[] = array(
+			$this->where[] = array(
 				'condition' => call_user_func_array("sprintf", $arguments),
 				'operator' => 'AND'
 			);
@@ -593,7 +628,7 @@ class MySQLQuery
 				$argumentsPair[1] = $this->quote($argumentsPair[1]);
 
 				// Build WHERE clause with sprintf and store with AND operator
-				$this->wheres[] = array(
+				$this->where[] = array(
 					'condition' => call_user_func_array("sprintf", $argumentsPair),
 					'operator' => 'AND'
 				);
@@ -648,7 +683,7 @@ class MySQLQuery
 			$arguments[1] = $this->quote($arguments[1]);
 
 			// Build WHERE clause with sprintf and store with OR operator
-			$this->wheres[] = array(
+			$this->where[] = array(
 				'condition' => call_user_func_array("sprintf", $arguments),
 				'operator' => 'OR'
 			);
@@ -681,7 +716,7 @@ class MySQLQuery
 				$argumentsPair[1] = $this->quote($argumentsPair[1]);
 
 				// Build WHERE clause with sprintf and store with OR operator
-				$this->wheres[] = array(
+				$this->where[] = array(
 					'condition' => call_user_func_array("sprintf", $argumentsPair),
 					'operator' => 'OR'
 				);
@@ -724,7 +759,7 @@ class MySQLQuery
 		$quotedValues = $this->quote($values);
 
 		// Build WHERE IN condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} IN {$quotedValues}",
 			'operator' => 'AND'
 		);
@@ -765,7 +800,7 @@ class MySQLQuery
 		$quotedValues = $this->quote($values);
 
 		// Build WHERE NOT IN condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} NOT IN {$quotedValues}",
 			'operator' => 'AND'
 		);
@@ -811,7 +846,7 @@ class MySQLQuery
 		$quotedMax = $this->quote($max);
 
 		// Build WHERE BETWEEN condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} BETWEEN {$quotedMin} AND {$quotedMax}",
 			'operator' => 'AND'
 		);
@@ -855,7 +890,7 @@ class MySQLQuery
 		$quotedPattern = $this->quote($pattern);
 
 		// Build WHERE LIKE condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} LIKE {$quotedPattern}",
 			'operator' => 'AND'
 		);
@@ -896,7 +931,7 @@ class MySQLQuery
 		$quotedPattern = $this->quote($pattern);
 
 		// Build WHERE NOT LIKE condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} NOT LIKE {$quotedPattern}",
 			'operator' => 'AND'
 		);
@@ -927,7 +962,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE IS NULL condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} IS NULL",
 			'operator' => 'AND'
 		);
@@ -958,7 +993,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE IS NOT NULL condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column} IS NOT NULL",
 			'operator' => 'AND'
 		);
@@ -994,9 +1029,9 @@ class MySQLQuery
 		}
 
 		$where = '';
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1008,7 +1043,7 @@ class MySQLQuery
 			$where = "WHERE " . join(" ", $whereParts);
 		}
 
-		$sql = "UPDATE {$this->froms} SET {$column} = {$column} + {$amount} {$where}";
+		$sql = "UPDATE {$this->from} SET {$column} = {$column} + {$amount} {$where}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -1051,9 +1086,9 @@ class MySQLQuery
 		}
 
 		$where = '';
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1065,7 +1100,7 @@ class MySQLQuery
 			$where = "WHERE " . join(" ", $whereParts);
 		}
 
-		$sql = "UPDATE {$this->froms} SET {$column} = {$column} - {$amount} {$where}";
+		$sql = "UPDATE {$this->from} SET {$column} = {$column} - {$amount} {$where}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -1138,63 +1173,12 @@ class MySQLQuery
 		// Build MATCH...AGAINST clause
 		$columnList = join(', ', $columns);
 
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "MATCH({$columnList}) AGAINST({$quotedSearch} {$modeString})",
 			'operator' => 'AND'
 		);
 
 		return $this;
-	}
-
-	/**
-	 * Execute raw query with parameter binding
-	 *
-	 * Executes a raw SQL query with safe parameter binding.
-	 * Use this when query builder doesn't support your query.
-	 *
-	 * Parameter Binding:
-	 *   Use ? as placeholders, pass values as additional arguments.
-	 *   Values are automatically escaped for security.
-	 *
-	 * Examples:
-	 *   rawQueryWithBinding('SELECT * FROM users WHERE age > ? AND status = ?', 18, 'active')
-	 *   → SELECT * FROM users WHERE age > 18 AND status = 'active'
-	 *
-	 *   rawQueryWithBinding('UPDATE posts SET views = views + ? WHERE id = ?', 1, 123)
-	 *   → UPDATE posts SET views = views + 1 WHERE id = 123
-	 *
-	 * @param string $query SQL query with ? placeholders
-	 * @param mixed ...$params Values to bind (variadic)
-	 * @return MySQLResponse Query execution result
-	 */
-	public function rawQueryWithBinding($query, ...$params)
-	{
-		if (empty($query))
-		{
-			throw new DatabaseException("No query provided for rawQueryWithBinding", 1);
-		}
-
-		// Count placeholders
-		$placeholderCount = substr_count($query, '?');
-
-		if ($placeholderCount !== count($params))
-		{
-			throw new DatabaseException("Parameter count mismatch: {$placeholderCount} placeholders, " . count($params) . " params provided", 1);
-		}
-
-		// Replace ? with %s for sprintf
-		$query = preg_replace("#\?#", "%s", $query);
-
-		// Quote all parameters
-		$quotedParams = array_map(function($param) {
-			return $this->quote($param);
-		}, $params);
-
-		// Build final query
-		$finalQuery = vsprintf($query, $quotedParams);
-
-		// Execute using existing rawQuery method
-		return $this->rawQuery($finalQuery);
 	}
 
 	/**
@@ -1435,7 +1419,7 @@ class MySQLQuery
 	 */
 	public function exists()
 	{
-		$this->limits = 1;
+		$this->limit = 1;
 		$this->offset = 0;
 
 		$sql = $this->buildSelect();
@@ -1482,7 +1466,7 @@ class MySQLQuery
 		$quotedDate = $this->quote($date);
 
 		// Build WHERE DATE() condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "DATE({$column}) = {$quotedDate}",
 			'operator' => 'AND'
 		);
@@ -1516,7 +1500,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE MONTH() condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "MONTH({$column}) = {$month}",
 			'operator' => 'AND'
 		);
@@ -1550,7 +1534,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE YEAR() condition
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "YEAR({$column}) = {$year}",
 			'operator' => 'AND'
 		);
@@ -1642,8 +1626,8 @@ class MySQLQuery
 		if ($this->exists()) {
 			return $this->save($values);
 		} else {
-			$insertQuery = new static(['connector' => $this->connector], $this->froms, false);
-			$insertQuery->froms = $this->froms;
+			$insertQuery = new static(['connector' => $this->connector], $this->from, false);
+			$insertQuery->from = $this->from;
 			return $insertQuery->save($values);
 		}
 	}
@@ -1672,13 +1656,13 @@ class MySQLQuery
 		if ($existing) {
 			return $existing;
 		} else {
-			$insertQuery = new static(['connector' => $this->connector], $this->froms, false);
-			$insertQuery->froms = $this->froms;
+			$insertQuery = new static(['connector' => $this->connector], $this->from, false);
+			$insertQuery->from = $this->from;
 
 			$lastId = $insertQuery->save($values);
 
-			$newQuery = new static(['connector' => $this->connector], $this->froms, false);
-			$newQuery->froms = $this->froms;
+			$newQuery = new static(['connector' => $this->connector], $this->from, false);
+			$newQuery->from = $this->from;
 
 			return $newQuery->where('id', $lastId)->first();
 		}
@@ -1757,11 +1741,11 @@ class MySQLQuery
 			throw new DatabaseException("No column provided for sum operation", 1);
 		}
 
-		$sql = "SELECT SUM({$column}) as total FROM {$this->froms}";
+		$sql = "SELECT SUM({$column}) as total FROM {$this->from}";
 
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1808,11 +1792,11 @@ class MySQLQuery
 			throw new DatabaseException("No column provided for avg operation", 1);
 		}
 
-		$sql = "SELECT AVG({$column}) as average FROM {$this->froms}";
+		$sql = "SELECT AVG({$column}) as average FROM {$this->from}";
 
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1859,11 +1843,11 @@ class MySQLQuery
 			throw new DatabaseException("No column provided for min operation", 1);
 		}
 
-		$sql = "SELECT MIN({$column}) as minimum FROM {$this->froms}";
+		$sql = "SELECT MIN({$column}) as minimum FROM {$this->from}";
 
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1910,11 +1894,11 @@ class MySQLQuery
 			throw new DatabaseException("No column provided for max operation", 1);
 		}
 
-		$sql = "SELECT MAX({$column}) as maximum FROM {$this->froms}";
+		$sql = "SELECT MAX({$column}) as maximum FROM {$this->from}";
 
-		if (!empty($this->wheres)) {
+		if (!empty($this->where)) {
 			$whereParts = array();
-			foreach ($this->wheres as $index => $whereClause) {
+			foreach ($this->where as $index => $whereClause) {
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 				if ($index === 0) {
@@ -1983,7 +1967,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE column comparison
-		$this->wheres[] = array(
+		$this->where[] = array(
 			'condition' => "{$column1} {$operator} {$column2}",
 			'operator' => 'AND'
 		);
@@ -1994,7 +1978,7 @@ class MySQLQuery
 	/**
 	 * Add GROUP BY clause
 	 *
-	 * Groups results by one or more columns.
+	 * group results by one or more columns.
 	 * Typically used with aggregate functions (COUNT, SUM, AVG, etc.).
 	 *
 	 * Examples:
@@ -2016,10 +2000,10 @@ class MySQLQuery
 			throw new DatabaseException("No columns provided for GROUP BY clause", 1);
 		}
 
-		// Add columns to groups array
+		// Add columns to group array
 		foreach ($columns as $column)
 		{
-			$this->groups[] = $column;
+			$this->group[] = $column;
 		}
 
 		return $this;
@@ -2060,7 +2044,7 @@ class MySQLQuery
 			$arguments[1] = $this->quote($arguments[1]);
 
 			// Build HAVING clause
-			$this->havings[] = call_user_func_array("sprintf", $arguments);
+			$this->having[] = call_user_func_array("sprintf", $arguments);
 
 			return $this;
 		}
@@ -2080,7 +2064,7 @@ class MySQLQuery
 			$argumentsPair[1] = $this->quote($argumentsPair[1]);
 
 			// Build HAVING clause
-			$this->havings[] = call_user_func_array("sprintf", $argumentsPair);
+			$this->having[] = call_user_func_array("sprintf", $argumentsPair);
 		}
 
 		return $this;
@@ -2120,9 +2104,9 @@ class MySQLQuery
 		$this->fields += array($table => $fields);
 
 		// Store join table, condition, and type
-		$this->joins['tables'][] = $table;
-		$this->joins['conditions'][] = $condition;
-		$this->joins['types'][] = 'INNER';  // Mark as INNER JOIN
+		$this->join['tables'][] = $table;
+		$this->join['conditions'][] = $condition;
+		$this->join['types'][] = 'INNER';  // Mark as INNER JOIN
 
 		return $this;
 	}
@@ -2175,7 +2159,7 @@ class MySQLQuery
 		$fields = join(", ", $fields);
 
 		// Build JOIN clauses (supports multiple joins with different types)
-		$queryJoin = $this->joins;
+		$queryJoin = $this->join;
 
 		if (!empty($queryJoin))
 		{
@@ -2187,6 +2171,17 @@ class MySQLQuery
 				$condition = $queryJoin['conditions'][$index];
 				$type = isset($queryJoin['types'][$index]) ? $queryJoin['types'][$index] : 'LEFT';
 
+				// Auto-prefix join condition columns
+				// Left side gets base table, right side gets join table
+				if (!preg_match('/^\w+\./', $condition)) {
+
+					$condition = preg_replace('/^(\w+)/', $this->from . '.$1', $condition);
+				}
+				if (!preg_match('/=\s*\w+\./', $condition)) {
+
+					$condition = preg_replace('/=\s*(\w+)$/', '= ' . $table . '.$1', $condition);
+				}
+
 				$joinParts[] = "{$type} JOIN {$table} ON {$condition}";
 			}
 
@@ -2194,7 +2189,7 @@ class MySQLQuery
 		}
 
 		// Build WHERE clause (supports AND/OR operators)
-		$queryWhere = $this->wheres;
+		$queryWhere = $this->where;
 
 		if (!empty($queryWhere))
 		{
@@ -2205,16 +2200,17 @@ class MySQLQuery
 				$condition = $whereClause['condition'];
 				$operator = $whereClause['operator'];
 
+				// Auto-prefix column with base table if joins exist and no table prefix
+				if (!empty($this->join) && !preg_match('/^\w+\./', $condition)){
+					
+					$condition = preg_replace('/^(\w+)/', $this->from . '.$1', $condition);
+				}
+
 				// First condition has no operator prefix
-				if ($index === 0)
-				{
-					$whereParts[] = $condition;
-				}
+				if ($index === 0) $whereParts[] = $condition;
+
 				// Subsequent conditions use their operator
-				else
-				{
-					$whereParts[] = "{$operator} {$condition}";
-				}
+				else $whereParts[] = "{$operator} {$condition}";
 			}
 
 			$joined = join(" ", $whereParts);
@@ -2223,25 +2219,41 @@ class MySQLQuery
 		}
 
 		// Build GROUP BY clause
-		$queryGroup = $this->groups;
+		$queryGroup = $this->group;
 
 		if (!empty($queryGroup))
 		{
+			// Auto-prefix columns with base table if joins exist
+			if (!empty($this->join))
+			{
+				$queryGroup = array_map(function($col) {
+					return preg_match('/^\w+\./', $col) ? $col : $this->from . '.' . $col;
+				}, $queryGroup);
+			}
+
 			$group = "GROUP BY " . join(", ", $queryGroup);
 		}
 
 		// Build HAVING clause
-		$queryHaving = $this->havings;
+		$queryHaving = $this->having;
 
 		if (!empty($queryHaving))
 		{
+			// Auto-prefix columns with base table if joins exist
+			if (!empty($this->join)){
+				
+				$queryHaving = array_map(function($cond) {
+					return preg_match('/^\w+\./', $cond) ? $cond : preg_replace('/^(\w+)/', $this->from . '.$1', $cond);
+				}, $queryHaving);
+			}
+
 			$joined = join(" AND ", $queryHaving);
 
 			$having = "HAVING {$joined}";
 		}
 
 		// Build ORDER BY clause (supports multiple columns)
-		$queryOrder = $this->orders;
+		$queryOrder = $this->order;
 
 		if (!empty($queryOrder))
 		{
@@ -2249,6 +2261,9 @@ class MySQLQuery
 
 			foreach ($queryOrder as $column => $direction)
 			{
+				// Auto-prefix column with base table if joins exist and no table prefix
+				if (!empty($this->join) && !preg_match('/^\w+\./', $column)) $column = $this->from . '.' . $column;
+
 				$orderParts[] = "{$column} {$direction}";
 			}
 
@@ -2256,7 +2271,7 @@ class MySQLQuery
 		}
 
 		// Build LIMIT clause
-		$queryLimit = $this->limits;
+		$queryLimit = $this->limit;
 
 		if (!empty($queryLimit))
 		{
@@ -2275,7 +2290,7 @@ class MySQLQuery
 		}
 
 		// Return complete query
-		return sprintf($template, $this->distinct, $fields, $this->froms, $join, $where, $group, $having, $order, $limit, $this->lockClause);
+		return sprintf($template, $this->distinct, $fields, $this->from, $join, $where, $group, $having, $order, $limit, $this->lockClause);
 	}
 
 	/**
@@ -2315,7 +2330,7 @@ class MySQLQuery
 		$values = join(", ", $values);
 
 		// Return complete query
-		return sprintf($template, $this->froms, $fields, $values);
+		return sprintf($template, $this->from, $fields, $values);
 	}
 
 	/**
@@ -2369,7 +2384,7 @@ class MySQLQuery
 		$values = join(", ", $values);
 
 		// Return complete query
-		return sprintf($template, $this->froms, $fields, $values);
+		return sprintf($template, $this->from, $fields, $values);
 	}
 
 	/**
@@ -2408,7 +2423,7 @@ class MySQLQuery
 		$parts = join(", ", $parts);
 
 		// Build WHERE clause (supports AND/OR operators)
-		$queryWhere = $this->wheres;
+		$queryWhere = $this->where;
 
 		if (!empty($queryWhere))
 		{
@@ -2437,7 +2452,7 @@ class MySQLQuery
 		}
 
 		// Build LIMIT clause
-		$queryLimit = $this->limits;
+		$queryLimit = $this->limit;
 
 		if (!empty($queryLimit))
 		{
@@ -2447,7 +2462,7 @@ class MySQLQuery
 		}
 
 		// Return complete query
-		return sprintf($template, $this->froms, $parts, $where, $limit);
+		return sprintf($template, $this->from, $parts, $where, $limit);
 	}
 
 	/**
@@ -2506,7 +2521,7 @@ class MySQLQuery
 		}
 
 		// Return complete query
-		return sprintf($template, $this->froms, $parts, $key, $where);
+		return sprintf($template, $this->from, $parts, $key, $where);
 	}
 
 	/**
@@ -2526,7 +2541,7 @@ class MySQLQuery
 		$template = "DELETE FROM %s %s %s";
 
 		// Build WHERE clause (supports AND/OR operators)
-		$queryWhere = $this->wheres;
+		$queryWhere = $this->where;
 
 		if (!empty($queryWhere))
 		{
@@ -2555,7 +2570,7 @@ class MySQLQuery
 		}
 
 		// Build LIMIT clause
-		$queryLimit = $this->limits;
+		$queryLimit = $this->limit;
 
 		if (!empty($queryLimit))
 		{
@@ -2565,7 +2580,7 @@ class MySQLQuery
 		}
 
 		// Return complete query
-		return sprintf($template, $this->froms, $where, $limit);
+		return sprintf($template, $this->from, $where, $limit);
 	}
 
 	// =========================================================================
@@ -2586,7 +2601,7 @@ class MySQLQuery
 	 */
 	public function save($data, $set_timestamps = false)
 	{
-		$doInsert = sizeof($this->wheres) == 0;
+		$doInsert = sizeof($this->where) == 0;
 
 		if ($doInsert) {
 			$sql = $this->buildInsert($data, $set_timestamps);
@@ -2612,6 +2627,41 @@ class MySQLQuery
 	}
 
 	/**
+	 * Update record by ID
+	 *
+	 * Extracts ID from data array, sets WHERE clause, and executes update.
+	 *
+	 * @param array $data Data array containing 'id' key and fields to update
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return int Number of affected rows
+	 * @throws DatabaseException If ID missing or no data to update
+	 */
+	public function saveById($data, $set_timestamps = false)
+	{
+		// Validate ID exists in data
+		if (!isset($data['id']))
+		{
+			throw new DatabaseException("The unique ID field for update records was not found in the input array");
+		}
+
+		// Extract ID and remove from data
+		$id = $data['id'];
+		unset($data['id']);
+
+		// Validate there is data to update
+		if (empty($data))
+		{
+			throw new DatabaseException("There is no data to update in the query");
+		}
+
+		// Add WHERE clause for ID
+		$this->where('id = ?', $id);
+
+		// Execute update via save()
+		return $this->save($data, $set_timestamps);
+	}
+
+	/**
 	 * Execute bulk INSERT or UPDATE query
 	 *
 	 * Determines whether to INSERT or UPDATE based on WHERE clause.
@@ -2629,7 +2679,7 @@ class MySQLQuery
 	{
 		$doInsert = false;
 
-		//if (sizeof($this->wheres) == 0) $doInsert = true;
+		//if (sizeof($this->where) == 0) $doInsert = true;
 		if ($fields == null) $doInsert = true;
 
 		if ($doInsert) {
@@ -2749,7 +2799,7 @@ class MySQLQuery
 		$values = join(", ", $values);
 
 		// Return complete query
-		return sprintf($template, $this->froms, $fields, $values);
+		return sprintf($template, $this->from, $fields, $values);
 	}
 
 	/**
@@ -2803,7 +2853,197 @@ class MySQLQuery
 		$values = join(", ", $values);
 
 		// Return complete query
-		return sprintf($template, $this->froms, $fields, $values);
+		return sprintf($template, $this->from, $fields, $values);
+	}
+
+	/**
+	 * Insert or update on duplicate key (upsert)
+	 *
+	 * Inserts new rows or updates existing ones when a duplicate key is encountered.
+	 * Auto-detects single vs bulk insert based on data structure.
+	 *
+	 * Query Template:
+	 *   INSERT INTO table (f1, f2) VALUES (v1, v2)
+	 *   ON DUPLICATE KEY UPDATE f1 = VALUES(f1), f2 = VALUES(f2)
+	 *
+	 * Process:
+	 *   1. Detect if data is single record (associative) or bulk (array of arrays)
+	 *   2. Delegate to buildInsertUpdate() or buildBulkInsertUpdate()
+	 *   3. Execute query and return affected row count
+	 *
+	 * Affected Rows:
+	 *   - 1 = row was inserted (new)
+	 *   - 2 = row was updated (duplicate key)
+	 *   - 0 = row unchanged (duplicate with same values)
+	 *
+	 * @param array $data Single record or array of records
+	 * @param array|null $fields Fields to update (null = all fields)
+	 * @param bool $set_timestamps Whether to set timestamps
+	 * @return int Number of affected rows
+	 */
+	public function saveUpdate($data, $fields = null, $set_timestamps = false)
+	{
+		$isBulk = isset($data[0]) && is_array($data[0]);
+
+		if ($isBulk) {
+			$sql = $this->buildBulkInsertUpdate($data, $fields, $set_timestamps);
+		}
+		else {
+			$sql = $this->buildInsertUpdate($data, $fields, $set_timestamps);
+		}
+
+		if ($this->returnSql) {
+
+			return $sql;
+		}
+
+		$result = $this->connector->execute($sql);
+
+		if ($result === false) {
+			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
+		}
+
+		return $this->connector->affectedRows();
+	}
+
+	/**
+	 * Build single INSERT ... ON DUPLICATE KEY UPDATE query
+	 *
+	 * Constructs a single-row upsert query. On duplicate key, updates specified
+	 * fields with their new values or custom expressions.
+	 *
+	 * Query Template:
+	 *   INSERT INTO table (f1, f2, f3) VALUES (v1, v2, v3)
+	 *   ON DUPLICATE KEY UPDATE f1 = VALUES(f1), f2 = expression
+	 *
+	 * Process:
+	 *   1. Add date_created timestamp if requested
+	 *   2. Extract field names and quoted values from data
+	 *   3. Build UPDATE clause via buildUpdateClause()
+	 *   4. Assemble complete query string
+	 *
+	 * @param array $data Single record to insert (associative array)
+	 * @param array|null $fields Fields to update on duplicate (null = all)
+	 * @param bool $set_timestamps Whether to add date_created
+	 * @return string Complete INSERT ... ON DUPLICATE KEY UPDATE query
+	 */
+	protected function buildInsertUpdate($data, $fields, $set_timestamps)
+	{
+		$fieldNames = array();
+		$values = array();
+		$template = "INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s";
+
+		if ($set_timestamps) {
+			$data['date_created'] = date('Y-m-d H:i:s');
+		}
+
+		foreach ($data as $field => $value) {
+			$fieldNames[] = $field;
+			$values[] = $this->quote($value);
+		}
+
+		$updateClause = $this->buildUpdateClause($fields, array_keys($data));
+
+		$fieldNames = join(", ", $fieldNames);
+		$values = join(", ", $values);
+
+		return sprintf($template, $this->from, $fieldNames, $values, $updateClause);
+	}
+
+	/**
+	 * Build bulk INSERT ... ON DUPLICATE KEY UPDATE query
+	 *
+	 * Constructs a multi-row upsert query. Inserts multiple rows in a single
+	 * statement, updating specified fields when duplicates are encountered.
+	 *
+	 * Query Template:
+	 *   INSERT INTO table (f1, f2) VALUES (v1, v2), (v3, v4), ...
+	 *   ON DUPLICATE KEY UPDATE f1 = VALUES(f1), f2 = expression
+	 *
+	 * Process:
+	 *   1. Extract field names from first row
+	 *   2. Iterate all rows, quote values, wrap each in parentheses
+	 *   3. Build UPDATE clause via buildUpdateClause()
+	 *   4. Assemble complete query string
+	 *
+	 * @param array $data Array of records to insert
+	 * @param array|null $fields Fields to update on duplicate (null = all)
+	 * @param bool $set_timestamps Whether to add date_created
+	 * @return string Complete INSERT ... ON DUPLICATE KEY UPDATE query
+	 */
+	protected function buildBulkInsertUpdate($data, $fields, $set_timestamps)
+	{
+		$fieldNames = array();
+		$values = array();
+		$template = "INSERT INTO %s (%s) VALUES %s ON DUPLICATE KEY UPDATE %s";
+
+		$firstRow = $data[0];
+		foreach ($firstRow as $field => $value) {
+			$fieldNames[] = $field;
+		}
+
+		$count = sizeof($data);
+
+		for ($i = 0; $i < $count; $i++) {
+			$row = $data[$i];
+			$rowValues = array();
+
+			foreach ($row as $field => $value) {
+				$rowValues[] = $this->quote($value);
+			}
+
+			$values[] = '(' . join(", ", $rowValues) . ')';
+		}
+
+		$updateClause = $this->buildUpdateClause($fields, array_keys($firstRow));
+
+		$fieldNames = join(", ", $fieldNames);
+		$values = join(", ", $values);
+
+		return sprintf($template, $this->from, $fieldNames, $values, $updateClause);
+	}
+
+	/**
+	 * Build ON DUPLICATE KEY UPDATE clause
+	 *
+	 * Constructs the UPDATE portion of an upsert query. Supports both simple
+	 * field names (uses VALUES()) and custom expressions.
+	 *
+	 * Process:
+	 *   1. If $fields is null, update all fields using VALUES()
+	 *   2. If key is numeric, value is field name: field = VALUES(field)
+	 *   3. If key is string, key is field, value is expression: key = value
+	 *
+	 * Examples:
+	 *   null                              → "f1 = VALUES(f1), f2 = VALUES(f2)"
+	 *   ['title', 'views']                → "title = VALUES(title), views = VALUES(views)"
+	 *   ['title', 'views' => 'views + 1'] → "title = VALUES(title), views = views + 1"
+	 *
+	 * @param array|null $fields Fields to update (mixed numeric/associative)
+	 * @param array $allFields All field names from data (fallback when $fields is null)
+	 * @return string UPDATE clause content (without ON DUPLICATE KEY UPDATE prefix)
+	 */
+	protected function buildUpdateClause($fields, $allFields)
+	{
+		$updates = array();
+
+		if ($fields === null) {
+			foreach ($allFields as $field) {
+				$updates[] = "$field = VALUES($field)";
+			}
+		}
+		else {
+			foreach ($fields as $key => $value) {
+				if (is_numeric($key)) {
+					$updates[] = "$value = VALUES($value)";
+				}
+				else {
+					$updates[] = "$key = $value";
+				}
+			}
+		}
+
+		return join(", ", $updates);
 	}
 
 	/**
@@ -2862,7 +3102,7 @@ class MySQLQuery
 		$setClause = implode(', ', $setClauses);
 		$whereClause = "{$key} IN (" . implode(',', array_map('intval', $ids)) . ")";
 
-		$sql = "UPDATE {$this->froms} SET {$setClause} WHERE {$whereClause}";
+		$sql = "UPDATE {$this->from} SET {$setClause} WHERE {$whereClause}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -2920,7 +3160,7 @@ class MySQLQuery
 		$setClause = implode(', ', $setClauses);
 		$whereClause = "{$key} IN (" . implode(',', array_map('intval', $ids)) . ")";
 
-		$sql = "UPDATE {$this->froms} SET {$setClause} WHERE {$whereClause}";
+		$sql = "UPDATE {$this->from} SET {$setClause} WHERE {$whereClause}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -2990,7 +3230,7 @@ class MySQLQuery
 	 */
 	public function count()
 	{
-		$this->fields = array($this->froms => array("COUNT(1)" => "row_count"));
+		$this->fields = array($this->from => array("COUNT(1)" => "row_count"));
 		$this->limit(1);
 
 		$row = $this->first();
@@ -3018,10 +3258,22 @@ class MySQLQuery
 			return $sql;
 		}
 
+		// Async mode: Fire query and return Promise
+		if ($this->async) {
+			$mysqli = $this->connector->executeAsync($sql);
+			return new MySQLAsync($mysqli, function($result) {
+				$rows = [];
+				while ($row = $result->fetch_assoc()) {
+					$rows[] = $row;
+				}
+				return $rows;
+			});
+		}
+
 		// Execute query (buffered or unbuffered based on flag)
 		if ($this->unbuffered) {
 			// Unbuffered mode: Return mysqli_result for streaming
-			$result = $this->connector->executeUnbuffered($sql);
+			$result = $this->connector->executeNoBuffer($sql);
 
 			if ($result === false) {
 				throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
@@ -3029,7 +3281,7 @@ class MySQLQuery
 
 			// Return mysqli_result directly (user iterates with fetch_assoc())
 			return $result;
-		} 
+		}
 		else {
 			// Buffered mode: Load all results into array (default behavior)
 			$result = $this->connector->execute($sql);
@@ -3048,56 +3300,62 @@ class MySQLQuery
 	}
 
 	/**
-	 * Execute raw SQL query
+	 * Execute raw SQL query with optional parameter binding
 	 *
-	 * Executes custom SQL when query builder is insufficient.
-	 * Use for complex queries, stored procedures, etc.
+	 * Executes a raw SQL query directly on the database.
+	 * Supports optional parameter binding for safe value injection.
+	 * Respects unbuffered mode when set via noBuffer().
 	 *
-	 * WARNING: Ensure proper escaping to prevent SQL injection!
+	 * Parameter Binding:
+	 *   Use ? as placeholders, pass values as additional arguments.
+	 *   Values are automatically escaped for security.
 	 *
-	 * @param string $query_string SQL query to execute
-	 * @return mixed Query result or response object
-	 * @throws DatabaseException If query execution fails
+	 * Unbuffered Mode:
+	 *   Chain with noBuffer() for memory-efficient large result sets.
+	 *   Fetches rows one at a time instead of loading all into memory.
+	 *
+	 * Examples:
+	 *   sql('SELECT * FROM users')
+	 *   → Executes query directly
+	 *
+	 *   sql('SELECT * FROM users WHERE age > ? AND status = ?', 18, 'active')
+	 *   → SELECT * FROM users WHERE age > 18 AND status = 'active'
+	 *
+	 *   noBuffer()->sql('SELECT * FROM large_table')
+	 *   → Executes in unbuffered mode for memory efficiency
+	 *
+	 * @param string $query SQL query (with ? placeholders if binding)
+	 * @param mixed ...$params Values to bind to placeholders
+	 * @return mixed Query result or mysqli_result for unbuffered
+	 * @throws DatabaseException If query fails or param count mismatch
 	 */
-	public function rawQuery($query_string)
+	public function sql($query, ...$params)
 	{
-		$result = $this->connector->execute($query_string);
+		if (empty($query)) throw new DatabaseException("No query provided for sql()");
 
-		if ($result === false) {
-			throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query_string . ')');
+		// If params passed, do binding
+		if (!empty($params))
+		{
+			$placeholderCount = substr_count($query, '?');
+
+			if ($placeholderCount !== count($params)) {
+				throw new DatabaseException("Parameter count mismatch: {$placeholderCount} placeholders, " . count($params) . " params provided");
+			}
+
+			$query = preg_replace("#\?#", "%s", $query);
+
+			$quotedParams = array_map(function($param) {
+				return $this->quote($param);
+			}, $params);
+
+			$query = vsprintf($query, $quotedParams);
 		}
 
-		return $result;
-	}
+		// Execute - respect unbuffered flag
+		if ($this->unbuffered) $result = $this->connector->executeNoBuffer($query);
+		else $result = $this->connector->execute($query);
 
-	/**
-	 * Execute unbuffered raw SQL query
-	 *
-	 * Executes query in unbuffered mode (MYSQLI_USE_RESULT) which fetches rows
-	 * one at a time instead of loading all results into memory. Essential for
-	 * exporting large tables without memory exhaustion.
-	 *
-	 * Use this for:
-	 * - SELECT queries on tables with millions of rows
-	 * - Export/backup operations
-	 * - Any operation that processes large result sets
-	 *
-	 * Do NOT use for:
-	 * - Small result sets (< 10K rows) - buffered is fine
-	 * - Queries where you need num_rows before fetching
-	 * - Multiple concurrent queries on same connection
-	 *
-	 * @param string $query_string SQL query to execute
-	 * @return mysqli_result Unbuffered result set
-	 * @throws DatabaseException If query fails
-	 */
-	public function rawQueryUnbuffered($query_string)
-	{
-		$result = $this->connector->executeUnbuffered($query_string);
-
-		if ($result === false) {
-			throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query_string . ')');
-		}
+		if ($result === false) throw new DatabaseException($this->connector->lastError() . ' (SQL: ' . $query . ')');
 
 		return $result;
 	}
