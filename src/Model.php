@@ -71,7 +71,7 @@
  *   - getByDateModified($date)  Get by date_modified
  *
  *   RAW SQL:
- *   - rawQuery($sql)            Execute raw SQL
+ *   - sql($sql, ...$params)     Execute raw SQL with optional binding
  *
  * Security:
  *   - All queries use PDO prepared statements
@@ -158,16 +158,10 @@ class Model
 	protected function Query()
 	{
 		// Get connection if not set (shared across all models)
-		if(static::$connection === null)
-		{
-			static::$connection = Registry::get('database');
-		}
+		if(static::$connection === null) static::$connection = Registry::get('database');
 
 		// Get query builder for this instance (unique per model call)
-		if($this->queryObject === null)
-		{
-			$this->queryObject = static::$connection->query(static::$table, static::$timestamps);
-		}
+		if($this->queryObject === null) $this->queryObject = static::$connection->query(static::$table, static::$timestamps);
 
 		return $this->queryObject;
 	}
@@ -212,6 +206,7 @@ class Model
 	final public static function select($fields = array("*"))
 	{
 		$instance = new static;
+
 		return $instance->Query()->setFields(static::$table, $fields);
 	}
 
@@ -240,6 +235,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->toSql();
 	}
 
@@ -289,7 +285,43 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->noBuffer();
+	}
+
+	/**
+	 * Enable async query execution
+	 *
+	 * When enabled, terminal methods (all, first, count, delete, save)
+	 * fire the query with MYSQLI_ASYNC and return a Promise instead
+	 * of blocking for the result.
+	 *
+	 * Call await() on the Promise to get the actual result.
+	 *
+	 * Limitations:
+	 *   - One async query at a time per connection
+	 *   - Must await() before starting another async query
+	 *   - Cannot be combined with noBuffer()
+	 *
+	 * Examples:
+	 *   // Fire query, do other work, then get result
+	 *   $promise = PageModel::async()->where('status', 'active')->all();
+	 *   $otherData = doSomethingElse();
+	 *   $pages = $promise->await();
+	 *
+	 *   // Check if ready without blocking
+	 *   if ($promise->ready()) {
+	 *       $pages = $promise->await();
+	 *   }
+	 *
+	 * @return static Returns query builder instance in async mode
+	 */
+	final public static function async()
+	{
+		$instance = new static;
+		$instance->setTable();
+
+		return $instance->Query()->async();
 	}
 
 	/**
@@ -315,11 +347,12 @@ class Model
 	 * @param array $fields Columns to select from joined table
 	 * @return $this Returns this instance for chaining
 	 */
-	final public function leftJoin($table, $condition, $fields = array("*"))
+	final public static function leftJoin($table, $condition, $fields = array("*"))
 	{
-		$this->Query()->leftJoin($table, $condition, $fields);
+		$instance = new static;
+		$instance->setTable();
 
-		return $this;
+		return $instance->Query()->leftJoin($table, $condition, $fields);
 	}
 
 	/**
@@ -350,9 +383,10 @@ class Model
 	 */
 	final public function limit($limit, $page = 1)
 	{
-		$this->Query()->limit($limit, $page);
+		$instance = new static;
+		$instance->setTable();
 
-		return $this;
+		return $instance->Query()->limit($limit, $page);
 	}
 
 	/**
@@ -372,9 +406,10 @@ class Model
 	 */
 	final public function unique()
 	{
-		$this->Query()->unique();
+		$instance = new static;
+		$instance->setTable();
 
-		return $this;
+		return $instance->Query()->unique();
 	}
 
 	/**
@@ -401,10 +436,9 @@ class Model
 	final public static function order($order, $direction = 'asc')
 	{
 		$instance = new static;
-		$instance->Query()->setTable(static::$table);
-		return $instance->Query()->order($order, $direction);
+		$instance->setTable();
 
-		
+		return $instance->Query()->order($order, $direction);		
 	}
 
 	/**
@@ -481,9 +515,7 @@ class Model
 		$instance->setTable();
 
 		// Execute insert or update
-		$result = $instance->Query()->save($data, static::$timestamps);
-
-		return $result;
+		return $instance->Query()->save($data, static::$timestamps);
 	}
 
 	/**
@@ -524,9 +556,7 @@ class Model
 		$instance->setTable();
 
 		// Execute bulk insert or update
-		$result = $instance->Query()->saveBulk($data, $fields, $ids, $key, static::$timestamps);
-
-		return $result;
+		return $instance->Query()->saveBulk($data, $fields, $ids, $key, static::$timestamps);
 	}
 
 	/**
@@ -571,9 +601,7 @@ class Model
 		$instance->setTable();
 
 		// Execute bulk increment
-		$result = $instance->Query()->incrementBulk($data, $fields, $ids, $key);
-
-		return $result;
+		return $instance->Query()->incrementBulk($data, $fields, $ids, $key);
 	}
 
 	/**
@@ -606,9 +634,7 @@ class Model
 		$instance->setTable();
 
 		// Execute bulk decrement
-		$result = $instance->Query()->decrementBulk($data, $fields, $ids, $key);
-
-		return $result;
+		return $instance->Query()->decrementBulk($data, $fields, $ids, $key);
 	}
 
 	/**
@@ -651,9 +677,58 @@ class Model
 		$instance->setTable();
 
 		// Execute insert with IGNORE (auto-detects single vs bulk)
-		$insertedCount = $instance->Query()->saveIgnore($data, static::$timestamps);
+		return $instance->Query()->saveIgnore($data, static::$timestamps);
+	}
 
-		return $insertedCount;
+	/**
+	 * Insert or update on duplicate key (upsert)
+	 *
+	 * Works with both single and bulk inserts. Uses INSERT ... ON DUPLICATE KEY UPDATE
+	 * to insert new rows or update existing ones when a duplicate key is encountered.
+	 * Returns the number of affected rows (1 for insert, 2 for update, 0 for unchanged).
+	 *
+	 * Performance Benefit:
+	 *   - Old: SELECT + INSERT or UPDATE = 2 queries
+	 *   - New: INSERT ... ON DUPLICATE KEY UPDATE = 1 query
+	 *
+	 * Use Cases:
+	 *   - Syncing data where you want to update existing records
+	 *   - Counters that should be created or incremented
+	 *   - Caching/storing data that may already exist
+	 *
+	 * Examples:
+	 *   // Single upsert - insert or update all fields
+	 *   PageModel::saveUpdate([
+	 *       'url_hash' => 'abc123',
+	 *       'url' => 'https://example.com',
+	 *       'title' => 'Example',
+	 *       'status' => 'active'
+	 *   ]);
+	 *
+	 *   // Single upsert - only update specific fields on duplicate
+	 *   PageModel::saveUpdate([
+	 *       'url_hash' => 'abc123',
+	 *       'url' => 'https://example.com',
+	 *       'title' => 'Example',
+	 *       'visit_count' => 1
+	 *   ], ['title', 'visit_count']);
+	 *
+	 *   // Bulk upsert
+	 *   PageModel::saveUpdate([
+	 *       ['url_hash' => 'abc123', 'title' => 'Page 1', 'views' => 1],
+	 *       ['url_hash' => 'def456', 'title' => 'Page 2', 'views' => 1],
+	 *   ], ['title', 'views']);
+	 *
+	 * @param array $data Single record (associative array) or multiple records (array of arrays)
+	 * @param array|null $fields Fields to update on duplicate (null = all fields)
+	 * @return int Number of affected rows (1=insert, 2=update per row)
+	 */
+	final public static function saveUpdate($data, $fields = null)
+	{
+		$instance = new static;
+		$instance->setTable();
+
+		return $instance->Query()->saveUpdate($data, $fields, static::$timestamps);
 	}
 
 	/**
@@ -675,38 +750,10 @@ class Model
 	 */
 	final public static function saveById($data)
 	{
-		try
-		{
-			// Validate ID exists in data
-			if(!isset($data['id']))
-			{
-				throw new ModelException(get_class(new ModelException) ." : The unique ID field for update records was not found in the input array to method updateById()");
-			}
-
-			// Extract ID and remove from data
-			$id['id'] = $data['id'];
-			$data = array_diff_key($data, $id);
-
-			// Validate there is data to update
-			if(empty($data))
-			{
-				throw new ModelException(get_class(new ModelException) ." : There is no data to update in the query submitted by method updateById() ");
-			}
-
-			// Build WHERE clause for ID
-			$instance = new static;
-			$instance->setTable();
-			$instance->Query()->where(array('id = ?', $id));
-
-			// Execute update
-			$result = $instance->Query()->save($data, static::$timestamps);
-
-			return $result;
-		}
-		catch (ModelException $e)
-		{
-			$e->errorShow();
-		}
+		$instance = new static;
+		$instance->setTable();
+		
+		return $instance->Query()->saveById($data, static::$timestamps);
 	}
 
 	// =========================================================================
@@ -738,9 +785,7 @@ class Model
 		$instance->setTable();
 
 		// Execute delete
-		$result = $instance->Query()->delete();
-
-		return $result;
+		return $instance->Query()->delete();
 	}
 
 	/**
@@ -760,12 +805,8 @@ class Model
 		// Build WHERE clause for ID
 		$instance = new static;
 		$instance->setTable();
-		$instance->Query()->where(array('id = ?', $id));
 
-		// Execute delete
-		$result = $instance->Query()->delete();
-
-		return $result;
+		return $instance->Query()->where(array('id = ?', $id))->delete();
 	}
 
 	// =========================================================================
@@ -798,9 +839,7 @@ class Model
 		$instance->setTable();
 
 		// Execute query
-		$result = $instance->Query()->first();
-
-		return $result;
+		return $instance->Query()->first();
 	}
 
 	/**
@@ -826,9 +865,7 @@ class Model
 		$instance->setTable();
 
 		// Execute count query
-		$result = $instance->Query()->count();
-
-		return $result;
+		return $instance->Query()->count();
 	}
 
 	/**
@@ -859,9 +896,7 @@ class Model
 		$instance->setTable();
 
 		// Execute query
-		$result = $instance->Query()->all();
-
-		return $result;
+		return $instance->Query()->all();
 	}
 
 	// =========================================================================
@@ -887,12 +922,8 @@ class Model
 		// Build WHERE clause for ID
 		$instance = new static;
 		$instance->setTable();
-		$instance->Query()->where(array('id = ?', $id));
-
-		// Execute query
-		$result = $instance->Query()->all();
-
-		return $result;
+		
+		return $instance->Query()->where(array('id = ?', $id))->all();
 	}
 
 	/**
@@ -913,12 +944,8 @@ class Model
 		// Build WHERE clause for date_created
 		$instance = new static;
 		$instance->setTable();
-		$instance->Query()->where(array('date_created = ?', $dateCreated));
-
-		// Execute query
-		$result = $instance->Query()->all();
-
-		return $result;
+		
+		return $instance->Query()->where(array('date_created = ?', $dateCreated))->all();
 	}
 
 	/**
@@ -939,12 +966,8 @@ class Model
 		// Build WHERE clause for date_modified
 		$instance = new static;
 		$instance->setTable();
-		$instance->Query()->where(array('date_modified = ?', $dateModified));
 
-		// Execute query
-		$result = $instance->Query()->all();
-
-		return $result;
+		return $instance->Query()->where(array('date_modified = ?', $dateModified))->all();
 	}
 
 	// =========================================================================
@@ -952,61 +975,36 @@ class Model
 	// =========================================================================
 
 	/**
-	 * Execute raw SQL query
+	 * Execute raw SQL query with optional parameter binding
 	 *
-	 * Executes custom SQL when query builder is insufficient.
-	 * Use for complex queries, full-text search, etc.
+	 * Executes a raw SQL query directly on the database.
+	 * Supports optional parameter binding for safe value injection.
+	 * Chain with noBuffer() for memory-efficient large result sets.
+	 *
+	 * Parameter Binding:
+	 *   Use ? as placeholders, pass values as additional arguments.
+	 *   Values are automatically escaped for security.
 	 *
 	 * Examples:
-	 *   // Complex query
-	 *   $results = Posts::rawQuery("
-	 *       SELECT * FROM posts
-	 *       WHERE MATCH(title, content) AGAINST('search term')
-	 *   ");
+	 *   // Simple query
+	 *   Posts::sql('SELECT * FROM posts')
 	 *
-	 *   // Custom aggregation
-	 *   $stats = Posts::rawQuery("
-	 *       SELECT category, COUNT(*) as count, AVG(views) as avg_views
-	 *       FROM posts
-	 *       GROUP BY category
-	 *   ");
+	 *   // With parameter binding
+	 *   Posts::sql('SELECT * FROM users WHERE age > ? AND status = ?', 18, 'active')
+	 *   → SELECT * FROM users WHERE age > 18 AND status = 'active'
 	 *
-	 * WARNING: Ensure proper escaping to prevent SQL injection!
+	 *   // Unbuffered for large result sets
+	 *   Posts::noBuffer()->sql('SELECT * FROM large_table')
 	 *
-	 * @param string $query_string SQL query string
-	 * @return MySQLResponse Response object
-	 * @throws DatabaseException If query error occurs
+	 * @param string $query SQL query (with ? placeholders if binding)
+	 * @param mixed ...$params Values to bind to placeholders
+	 * @return mixed Query result
+	 * @throws DatabaseException If query fails or param count mismatch
 	 */
-	final public static function rawQuery($query_string)
+	final public static function sql($query, ...$params)
 	{
 		$instance = new static;
-		return $instance->Query()->rawQuery($query_string);
-	}
-
-	/**
-	 * Execute unbuffered raw SQL query
-	 *
-	 * Executes query in unbuffered mode for memory-efficient processing of large
-	 * result sets. Fetches rows one at a time instead of loading all into memory.
-	 *
-	 * Critical for:
-	 * - Exporting tables with millions of rows
-	 * - Processing large datasets without memory exhaustion
-	 * - Backup operations on production databases
-	 *
-	 * Example:
-	 *   $result = Model::rawQueryUnbuffered("SELECT * FROM large_table");
-	 *   while ($row = $result->fetch_assoc()) {
-	 *       // Process one row at a time (minimal memory)
-	 *   }
-	 *
-	 * @param string $query_string SQL query to execute
-	 * @return mysqli_result Unbuffered result set
-	 */
-	final public static function rawQueryUnbuffered($query_string)
-	{
-		$instance = new static;
-		return $instance->Query()->rawQueryUnbuffered($query_string);
+		return $instance->Query()->sql($query, ...$params);
 	}
 
 	// =========================================================================
@@ -1029,6 +1027,8 @@ class Model
 	final public static function groupBy(...$columns)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->groupBy(...$columns);
 	}
 
@@ -1047,6 +1047,8 @@ class Model
 	final public static function having(...$arguments)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->having(...$arguments);
 	}
 
@@ -1066,6 +1068,8 @@ class Model
 	final public static function innerJoin($table, $condition, $fields = array("*"))
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->innerJoin($table, $condition, $fields);
 	}
 
@@ -1083,6 +1087,8 @@ class Model
 	final public static function orWhere(...$arguments)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->orWhere(...$arguments);
 	}
 
@@ -1103,6 +1109,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereIn($column, $values);
 	}
 
@@ -1122,6 +1129,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereNotIn($column, $values);
 	}
 
@@ -1143,6 +1151,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereBetween($column, $min, $max);
 	}
 
@@ -1163,6 +1172,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereLike($column, $pattern);
 	}
 
@@ -1182,6 +1192,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereNotLike($column, $pattern);
 	}
 
@@ -1200,6 +1211,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereNull($column);
 	}
 
@@ -1218,7 +1230,8 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
-		return $instance>Query()->whereNotNull($column);
+
+		return $instance->Query()->whereNotNull($column);
 	}
 
 	/**
@@ -1237,6 +1250,8 @@ class Model
 	final public static function increment($column, $amount = 1)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->increment($column, $amount);
 	}
 
@@ -1256,6 +1271,8 @@ class Model
 	final public static function decrement($column, $amount = 1)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->decrement($column, $amount);
 	}
 
@@ -1277,25 +1294,8 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
-		return $instance->Query()->whereFulltext($columns, $search, $mode);
-	}
 
-	/**
-	 * Execute raw query with parameter binding
-	 *
-	 * Executes a raw SQL query with safe parameter binding.
-	 *
-	 * Examples:
-	 *   Posts::rawQueryWithBinding('SELECT * FROM posts WHERE age > ? AND status = ?', 18, 'active');
-	 *
-	 * @param string $query SQL query with ? placeholders
-	 * @param mixed ...$params Values to bind (variadic)
-	 * @return MySQLResponse Query execution result
-	 */
-	final public static function rawQueryWithBinding($query, ...$params)
-	{
-		$instance = new static;
-		return $instance->Query()->rawQueryWithBinding($query, ...$params);
+		return $instance->Query()->whereFulltext($columns, $search, $mode);
 	}
 
 	/**
@@ -1313,6 +1313,7 @@ class Model
 	final public static function begin()
 	{
 		$instance = new static;
+
 		return $instance->Query()->begin();
 	}
 
@@ -1331,6 +1332,7 @@ class Model
 	final public static function commit()
 	{
 		$instance = new static;
+
 		return $instance->Query()->commit();
 	}
 
@@ -1353,6 +1355,7 @@ class Model
 	final public static function rollback()
 	{
 		$instance = new static;
+
 		return $instance->Query()->rollback();
 	}
 
@@ -1417,6 +1420,8 @@ class Model
 	final public static function pluck($column)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->pluck($column);
 	}
 
@@ -1436,9 +1441,7 @@ class Model
 		$instance = new static;
 		$instance->setTable();
 
-		$exists = $instance->Query()->exists();
-
-		return $exists;
+		return $instance->Query()->exists();
 	}
 
 	/**
@@ -1457,6 +1460,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereDate($column, $date);
 	}
 
@@ -1476,6 +1480,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereMonth($column, $month);
 	}
 
@@ -1495,6 +1500,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereYear($column, $year);
 	}
 
@@ -1514,6 +1520,8 @@ class Model
 	final public static function paginate($perPage = 15, $page = 1)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->paginate($perPage, $page);
 	}
 
@@ -1532,6 +1540,8 @@ class Model
 	final public static function updateOrCreate($values)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->updateOrCreate($values);
 	}
 
@@ -1550,6 +1560,8 @@ class Model
 	final public static function firstOrCreate($values)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->firstOrCreate($values);
 	}
 
@@ -1576,6 +1588,8 @@ class Model
 	final public static function chunk($size, $callback)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->chunk($size, $callback);
 	}
 
@@ -1589,11 +1603,13 @@ class Model
 	 *   Posts::where('status', 'completed')->sum('amount');
 	 *
 	 * @param string $column Column name to sum
-	 * @return float Sum of column values
+	 * @return float Sum of column values 
 	 */
 	final public static function sum($column)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->sum($column);
 	}
 
@@ -1612,6 +1628,8 @@ class Model
 	final public static function avg($column)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->avg($column);
 	}
 
@@ -1630,6 +1648,8 @@ class Model
 	final public static function min($column)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->min($column);
 	}
 
@@ -1648,6 +1668,8 @@ class Model
 	final public static function max($column)
 	{
 		$instance = new static;
+		$instance->setTable();
+
 		return $instance->Query()->max($column);
 	}
 
@@ -1669,6 +1691,7 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
+
 		return $instance->Query()->whereColumn($column1, $operatorOrColumn2, $column2);
 	}
 }
