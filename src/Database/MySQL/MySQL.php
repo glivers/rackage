@@ -562,7 +562,8 @@ class MySQL {
 					}
 				}
 				else {
-					throw $e; // Different error, re-throw
+					$sqlPreview = strlen($sql) > 500 ? substr($sql, 0, 500) . '...[truncated]' : $sql;
+					throw new DatabaseException($e->getMessage() . "\nSQL: " . $sqlPreview, $e->getCode());
 				}
 			}
 
@@ -604,7 +605,7 @@ class MySQL {
 	 * @return mysqli_result|bool Result object or false
 	 * @throws DatabaseException If not connected or query fails
 	 */
-	public function executeUnbuffered($sql)
+	public function executeNoBuffer($sql)
 	{
 		try
 		{
@@ -652,6 +653,41 @@ class MySQL {
 			$exception->errorShow();
 			throw $exception; // Re-throw so caller knows it failed
 		}
+	}
+
+	/**
+	 * Execute query asynchronously (non-blocking)
+	 *
+	 * Fires the query with MYSQLI_ASYNC flag and returns immediately.
+	 * The query runs in the background while PHP continues execution.
+	 *
+	 * Returns the mysqli connection for use with Promise, which will
+	 * poll for completion and reap the result when await() is called.
+	 *
+	 * Limitations:
+	 *   - One async query at a time per connection
+	 *   - Must await() result before starting another async query
+	 *   - Cannot use with unbuffered mode
+	 *
+	 * Usage:
+	 *   $mysqli = $connector->executeAsync($sql);
+	 *   $promise = new Promise($mysqli, fn($r) => $r->fetch_all());
+	 *   // ... do other work ...
+	 *   $result = $promise->await();
+	 *
+	 * @param string $sql SQL query to execute
+	 * @return \mysqli The connection (for Promise to poll/reap)
+	 * @throws DatabaseException If not connected
+	 */
+	public function executeAsync($sql)
+	{
+		if (!$this->validService()) {
+			throw new DatabaseException("Not connected to a valid database service");
+		}
+
+		$this->service->query($sql, MYSQLI_ASYNC);
+
+		return $this->service;
 	}
 
 	// =========================================================================
