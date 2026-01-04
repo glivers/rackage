@@ -517,7 +517,7 @@ class Request {
      *       // Any admin route
      *   }
      *
-     *   if (Request::is('api/*/users')) {
+     *   if (Request::is('api/* /users')) {
      *       // Matches: /api/v1/users, /api/v2/users
      *   }
      *
