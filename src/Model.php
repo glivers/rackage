@@ -483,159 +483,66 @@ class Model
 	// =========================================================================
 
 	/**
-	 * Insert or update record
+	 * Insert or update records
 	 *
-	 * Inserts new record or updates existing record if WHERE clause is set.
+	 * Unified save method that handles all insert and update operations:
 	 *
-	 * Examples:
-	 *   // Insert new record
+	 * SINGLE INSERT - Pass associative array, no where clause:
 	 *   Posts::save([
 	 *       'title' => 'New Post',
 	 *       'content' => 'Post content',
 	 *       'status' => 'draft'
 	 *   ]);
 	 *
-	 *   // Update existing record
-	 *   Posts::where('id', 123)->save(['title' => 'Updated Title']);
+	 * BULK INSERT - Pass array of arrays, no where clause:
+	 *   Posts::save([
+	 *       ['title' => 'Post 1', 'content' => 'Content 1'],
+	 *       ['title' => 'Post 2', 'content' => 'Content 2'],
+	 *       ['title' => 'Post 3', 'content' => 'Content 3']
+	 *   ]);
 	 *
-	 *   // Update multiple records
+	 * UPDATE WITH WHERE - Pass data with where clause (same values to all matched rows):
+	 *   Posts::where('id', 123)->save(['title' => 'Updated Title']);
 	 *   Posts::where('status', 'draft')->save(['status' => 'published']);
+	 *   Posts::where('author = ?', 'banned')
+	 *        ->orWhere('content = ?', 'spam')
+	 *        ->save(['status' => 'inactive', 'visible' => 0]);
+	 *
+	 * BULK UPDATE - Pass array with $key to update different values per row:
+	 *   Posts::save([
+	 *       ['id' => 1, 'title' => 'Updated Post 1', 'status' => 'active'],
+	 *       ['id' => 2, 'title' => 'Updated Post 2', 'status' => 'draft'],
+	 *       ['id' => 3, 'title' => 'Updated Post 3', 'status' => 'archived']
+	 *   ], 'id');
+	 *
+	 *   The $key parameter specifies which column to use for matching rows.
+	 *   Each row in $data must contain the key column (e.g., 'id').
+	 *   Other columns are the values to update for that specific row.
+	 *
+	 * How it works:
+	 *   - No $key + no where  + associative array  → Single INSERT
+	 *   - No $key + no where  + array of arrays    → Bulk INSERT
+	 *   - No $key + has where + any data           → UPDATE (same values to all matched rows)
+	 *   - Has $key                                 → Bulk UPDATE (different values per row)
 	 *
 	 * Timestamps:
-	 *   If $timestamps is true, automatically sets:
+	 *   If $timestamps is true in the model, automatically sets:
 	 *   - date_created on insert
 	 *   - date_modified on update
 	 *
-	 * @param array $data Associative array of column => value pairs
-	 * @return MySQLResponse Response object with insert ID, affected rows, etc.
+	 * @param array $data Single record (associative) or multiple records (array of arrays)
+	 * @param string|null $key Column name for bulk update (e.g., 'id'). When provided,
+	 *                         extracts IDs and fields from $data to update each row individually.
+	 * @return mixed Insert ID for single insert, affected rows for update/bulk operations
 	 */
-	final public static function save($data)
+	final public static function save($data, $key = null)
 	{
 		$instance = new static;
 		$instance->setTable();
 
-		// Execute insert or update
-		return $instance->Query()->save($data, static::$timestamps);
+		return $instance->Query()->save($data, $key, static::$timestamps);
 	}
 
-	/**
-	 * Bulk insert or update records
-	 *
-	 * Insert or update multiple records in a single query.
-	 * More efficient than multiple save() calls.
-	 *
-	 * Examples:
-	 *   // Bulk insert
-	 *   Posts::saveBulk(
-	 *       [
-	 *           ['title' => 'Post 1', 'content' => 'Content 1'],
-	 *           ['title' => 'Post 2', 'content' => 'Content 2']
-	 *       ],
-	 *       ['title', 'content']
-	 *   );
-	 *
-	 *   // Bulk update
-	 *   Users::saveBulk(
-	 *       [
-	 *           ['id' => 1, 'status' => 'active'],
-	 *           ['id' => 2, 'status' => 'inactive']
-	 *       ],
-	 *       ['status'],
-	 *       ['id']
-	 *   );
-	 *
-	 * @param array $data Multi-dimensional array of records
-	 * @param array $fields Column names (optional)
-	 * @param array $ids ID columns for updates (optional)
-	 * @param mixed $key Primary key name (optional)
-	 * @return MySQLResponse Response object
-	 */
-	final public static function saveBulk($data, $fields = null, $ids = null, $key = null)
-	{
-		$instance = new static;
-		$instance->setTable();
-
-		// Execute bulk insert or update
-		return $instance->Query()->saveBulk($data, $fields, $ids, $key, static::$timestamps);
-	}
-
-	/**
-	 * Bulk increment multiple rows with different values
-	 *
-	 * Efficiently increments fields for multiple records in a single query using CASE statements.
-	 * Much faster than individual increment() calls in a loop.
-	 *
-	 * Examples:
-	 *   // Increment single field
-	 *   DomainModel::incrementBulk(
-	 *       [
-	 *           1 => ['total_pages' => 5],
-	 *           2 => ['total_pages' => 3],
-	 *           3 => ['total_pages' => 8]
-	 *       ],
-	 *       ['total_pages'],
-	 *       [1, 2, 3],
-	 *       'id'
-	 *   );
-	 *
-	 *   // Increment multiple fields per row
-	 *   DomainModel::incrementBulk(
-	 *       [
-	 *           1 => ['active_pages' => 5, 'failed_pages' => 2],
-	 *           2 => ['active_pages' => 3]
-	 *       ],
-	 *       ['active_pages', 'failed_pages'],
-	 *       [1, 2],
-	 *       'id'
-	 *   );
-	 *
-	 * @param array $data Data keyed by ID: [id => ['field' => incrementValue]]
-	 * @param array $fields Array of field names to increment
-	 * @param array $ids Array of IDs to update
-	 * @param string $key Key column name (default: 'id')
-	 * @return int Number of rows affected
-	 */
-	final public static function incrementBulk($data, $fields, $ids, $key = 'id')
-	{
-		$instance = new static;
-		$instance->setTable();
-
-		// Execute bulk increment
-		return $instance->Query()->incrementBulk($data, $fields, $ids, $key);
-	}
-
-	/**
-	 * Bulk decrement fields for multiple records
-	 *
-	 * Efficiently decrements fields for multiple records in a single query.
-	 * Mirrors incrementBulk but subtracts values instead.
-	 *
-	 * Examples:
-	 *   // Decrement active_pages for multiple domains
-	 *   DomainModel::decrementBulk(
-	 *       [
-	 *           1 => ['active_pages' => 5],
-	 *           2 => ['active_pages' => 3],
-	 *       ],
-	 *       ['active_pages'],
-	 *       [1, 2],
-	 *       'id'
-	 *   );
-	 *
-	 * @param array $data Data keyed by ID: [id => ['field' => decrementValue]]
-	 * @param array $fields Array of field names to decrement
-	 * @param array $ids Array of IDs to update
-	 * @param string $key Key column name (default: 'id')
-	 * @return int Number of rows affected
-	 */
-	final public static function decrementBulk($data, $fields, $ids, $key = 'id')
-	{
-		$instance = new static;
-		$instance->setTable();
-
-		// Execute bulk decrement
-		return $instance->Query()->decrementBulk($data, $fields, $ids, $key);
-	}
 
 	/**
 	 * Insert with INSERT IGNORE (skip duplicates)
@@ -1235,45 +1142,86 @@ class Model
 	}
 
 	/**
-	 * Increment a column value
+	 * Increment column values
 	 *
-	 * Increases a numeric column by specified amount (default: 1).
+	 * Unified method for single and bulk increment operations.
+	 * All data is passed as arrays for consistency.
 	 *
-	 * Examples:
-	 *   Posts::where('id', 123)->increment('views');
-	 *   Posts::where('id', 456)->increment('votes', 5);
+	 * SINGLE INCREMENT (with optional where clause):
+	 *   // Increment by 1
+	 *   Posts::where('id', 1)->increment(['views']);
 	 *
-	 * @param string $column Column name to increment
-	 * @param int $amount Amount to increment by (default: 1)
-	 * @return MySQLResponse Query execution result
+	 *   // Increment by specific amount
+	 *   Posts::where('id', 1)->increment(['views' => 10]);
+	 *
+	 *   // Increment multiple fields
+	 *   Posts::where('id', 1)->increment(['views' => 10, 'shares' => 5]);
+	 *
+	 *   // Increment all rows (no where)
+	 *   Posts::increment(['views']);
+	 *
+	 * BULK INCREMENT (different values per row):
+	 *   Posts::increment([
+	 *       ['id' => 1, 'views' => 10, 'shares' => 2],
+	 *       ['id' => 2, 'views' => 5, 'shares' => 1],
+	 *       ['id' => 3, 'views' => 20, 'shares' => 8],
+	 *   ], 'id');
+	 *
+	 * Data Format:
+	 *   Single: ['field'] for +1, or ['field' => amount] for custom amount
+	 *   Bulk: Array of rows, each with key column and fields to increment
+	 *         All rows must have the same fields (uniform columns)
+	 *
+	 * @param array $data Fields to increment (single) or array of rows (bulk)
+	 * @param string|null $key Column name for bulk increment (e.g., 'id')
+	 * @return int Number of affected rows
 	 */
-	final public static function increment($column, $amount = 1)
+	final public static function increment($data, $key = null)
 	{
 		$instance = new static;
 		$instance->setTable();
 
-		return $instance->Query()->increment($column, $amount);
+		return $instance->Query()->increment($data, $key);
 	}
 
 	/**
-	 * Decrement a column value
+	 * Decrement column values
 	 *
-	 * Decreases a numeric column by specified amount (default: 1).
+	 * Unified method for single and bulk decrement operations.
+	 * All data is passed as arrays for consistency.
 	 *
-	 * Examples:
-	 *   Posts::where('id', 123)->decrement('stock');
-	 *   Posts::where('id', 456)->decrement('credits', 10);
+	 * SINGLE DECREMENT (with optional where clause):
+	 *   // Decrement by 1
+	 *   Products::where('id', 1)->decrement(['stock']);
 	 *
-	 * @param string $column Column name to decrement
-	 * @param int $amount Amount to decrement by (default: 1)
-	 * @return MySQLResponse Query execution result
+	 *   // Decrement by specific amount
+	 *   Users::where('id', 1)->decrement(['credits' => 10]);
+	 *
+	 *   // Decrement multiple fields
+	 *   Products::where('id', 1)->decrement(['stock' => 5, 'reserved' => 2]);
+	 *
+	 * BULK DECREMENT (different values per row):
+	 *   Products::decrement([
+	 *       ['id' => 1, 'stock' => 10],
+	 *       ['id' => 2, 'stock' => 5],
+	 *       ['id' => 3, 'stock' => 20],
+	 *   ], 'id');
+	 *
+	 * Data Format:
+	 *   Single: ['field'] for -1, or ['field' => amount] for custom amount
+	 *   Bulk: Array of rows, each with key column and fields to decrement
+	 *         All rows must have the same fields (uniform columns)
+	 *
+	 * @param array $data Fields to decrement (single) or array of rows (bulk)
+	 * @param string|null $key Column name for bulk decrement (e.g., 'id')
+	 * @return int Number of affected rows
 	 */
-	final public static function decrement($column, $amount = 1)
+	final public static function decrement($data, $key = null)
 	{
 		$instance = new static;
 		$instance->setTable();
 
-		return $instance->Query()->decrement($column, $amount);
+		return $instance->Query()->decrement($data, $key);
 	}
 
 	/**

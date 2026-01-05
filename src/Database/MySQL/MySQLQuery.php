@@ -1002,32 +1002,67 @@ class MySQLQuery
 	}
 
 	/**
-	 * Increment a column value
+	 * Increment column values
 	 *
-	 * Increases a numeric column by specified amount (default: 1).
-	 * Useful for counters, views, votes, etc.
+	 * Unified method for single and bulk increment operations.
+	 *
+	 * SINGLE INCREMENT (with optional where clause):
+	 *   ['field']           → increment field by 1
+	 *   ['field' => 10]     → increment field by 10
+	 *   ['a' => 5, 'b' => 2] → increment multiple fields
+	 *
+	 * BULK INCREMENT (pass $key as second parameter):
+	 *   [['id' => 1, 'views' => 10], ['id' => 2, 'views' => 5]], 'id'
 	 *
 	 * Examples:
-	 *   increment('views')
+	 *   increment(['views'])
 	 *   → UPDATE table SET views = views + 1
 	 *
-	 *   increment('votes', 5)
+	 *   increment(['votes' => 5])
 	 *   → UPDATE table SET votes = votes + 5
 	 *
-	 * @param string $column Column name to increment
-	 * @param int $amount Amount to increment by (default: 1)
-	 * @return MySQLResponse Query execution result
+	 *   increment([['id' => 1, 'views' => 10], ['id' => 2, 'views' => 5]], 'id')
+	 *   → Bulk increment with CASE statements
+	 *
+	 * @param array $data Fields to increment or array of rows for bulk
+	 * @param string|null $key Column name for bulk increment (e.g., 'id')
+	 * @return int Number of affected rows
+	 * @throws DatabaseException If data is empty or query fails
 	 */
-	public function increment($column, $amount = 1)
+	public function increment($data, $key = null)
 	{
-		if (empty($column)) {
-			throw new DatabaseException("No column provided for increment operation", 1);
+		if (empty($data)) {
+			throw new DatabaseException("No columns provided for increment operation", 1);
 		}
 
-		if (!is_numeric($amount) || $amount <= 0) {
-			throw new DatabaseException("Invalid increment amount (must be positive number)", 1);
+		// Bulk increment - delegate to incrementBulk
+		if ($key !== null) {
+			return $this->incrementBulk($data, $key);
 		}
 
+		// Build SET clause for each field
+		$setParts = [];
+		foreach ($data as $k => $value) {
+			if (is_numeric($k)) {
+				// ['views'] format - field name as value, increment by 1
+				$field = $value;
+				$amount = 1;
+			} else {
+				// ['views' => 10] format - field name as key, amount as value
+				$field = $k;
+				$amount = (int) $value;
+			}
+
+			if ($amount <= 0) {
+				throw new DatabaseException("Invalid increment amount for {$field} (must be positive number)", 1);
+			}
+
+			$setParts[] = "{$field} = {$field} + {$amount}";
+		}
+
+		$setClause = implode(', ', $setParts);
+
+		// Build WHERE clause
 		$where = '';
 		if (!empty($this->where)) {
 			$whereParts = array();
@@ -1043,7 +1078,7 @@ class MySQLQuery
 			$where = "WHERE " . join(" ", $whereParts);
 		}
 
-		$sql = "UPDATE {$this->from} SET {$column} = {$column} + {$amount} {$where}";
+		$sql = "UPDATE {$this->from} SET {$setClause} {$where}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -1059,32 +1094,67 @@ class MySQLQuery
 	}
 
 	/**
-	 * Decrement a column value
+	 * Decrement column values
 	 *
-	 * Decreases a numeric column by specified amount (default: 1).
-	 * Useful for stock counters, credits, etc.
+	 * Unified method for single and bulk decrement operations.
+	 *
+	 * SINGLE DECREMENT (with optional where clause):
+	 *   ['field']           → decrement field by 1
+	 *   ['field' => 10]     → decrement field by 10
+	 *   ['a' => 5, 'b' => 2] → decrement multiple fields
+	 *
+	 * BULK DECREMENT (pass $key as second parameter):
+	 *   [['id' => 1, 'stock' => 10], ['id' => 2, 'stock' => 5]], 'id'
 	 *
 	 * Examples:
-	 *   decrement('stock')
+	 *   decrement(['stock'])
 	 *   → UPDATE table SET stock = stock - 1
 	 *
-	 *   decrement('credits', 10)
+	 *   decrement(['credits' => 10])
 	 *   → UPDATE table SET credits = credits - 10
 	 *
-	 * @param string $column Column name to decrement
-	 * @param int $amount Amount to decrement by (default: 1)
-	 * @return MySQLResponse Query execution result
+	 *   decrement([['id' => 1, 'stock' => 10], ['id' => 2, 'stock' => 5]], 'id')
+	 *   → Bulk decrement with CASE statements
+	 *
+	 * @param array $data Fields to decrement or array of rows for bulk
+	 * @param string|null $key Column name for bulk decrement (e.g., 'id')
+	 * @return int Number of affected rows
+	 * @throws DatabaseException If data is empty or query fails
 	 */
-	public function decrement($column, $amount = 1)
+	public function decrement($data, $key = null)
 	{
-		if (empty($column)) {
-			throw new DatabaseException("No column provided for decrement operation", 1);
+		if (empty($data)) {
+			throw new DatabaseException("No columns provided for decrement operation", 1);
 		}
 
-		if (!is_numeric($amount) || $amount <= 0) {
-			throw new DatabaseException("Invalid decrement amount (must be positive number)", 1);
+		// Bulk decrement - delegate to decrementBulk
+		if ($key !== null) {
+			return $this->decrementBulk($data, $key);
 		}
 
+		// Build SET clause for each field
+		$setParts = [];
+		foreach ($data as $k => $value) {
+			if (is_numeric($k)) {
+				// ['stock'] format - field name as value, decrement by 1
+				$field = $value;
+				$amount = 1;
+			} else {
+				// ['stock' => 10] format - field name as key, amount as value
+				$field = $k;
+				$amount = (int) $value;
+			}
+
+			if ($amount <= 0) {
+				throw new DatabaseException("Invalid decrement amount for {$field} (must be positive number)", 1);
+			}
+
+			$setParts[] = "{$field} = {$field} - {$amount}";
+		}
+
+		$setClause = implode(', ', $setParts);
+
+		// Build WHERE clause
 		$where = '';
 		if (!empty($this->where)) {
 			$whereParts = array();
@@ -1100,7 +1170,7 @@ class MySQLQuery
 			$where = "WHERE " . join(" ", $whereParts);
 		}
 
-		$sql = "UPDATE {$this->from} SET {$column} = {$column} - {$amount} {$where}";
+		$sql = "UPDATE {$this->from} SET {$setClause} {$where}";
 
 		if ($this->returnSql) {
 			return $sql;
@@ -2481,9 +2551,10 @@ class MySQLQuery
 	 * @param array $fields Field names to update
 	 * @param array $ids ID values for WHERE IN clause
 	 * @param string $key Primary key column name (e.g., 'id')
+	 * @param bool $set_timestamps Whether to add date_modified timestamp
 	 * @return string Complete UPDATE query
 	 */
-	protected function buildBulkUpdate($data, $fields, $ids, $key)
+	protected function buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps = false)
 	{
 		$parts = array();
 		$template = "UPDATE %s SET %s WHERE %s IN (%s) ";
@@ -2507,6 +2578,12 @@ class MySQLQuery
 			$subparts .= ' END) ';
 
 			$parts[] = $subparts;
+		}
+
+		// Add timestamp if requested (applies to all rows)
+		if ($set_timestamps)
+		{
+			$parts[] = "date_modified = '" . date('Y-m-d H:i:s') . "'";
 		}
 
 		// Convert parts to string
@@ -2588,25 +2665,64 @@ class MySQLQuery
 	// =========================================================================
 
 	/**
-	 * Execute INSERT or UPDATE query
+	 * Insert or update records
 	 *
-	 * Determines whether to INSERT or UPDATE based on WHERE clause.
-	 * If WHERE clause is empty, performs INSERT.
-	 * If WHERE clause is set, performs UPDATE.
+	 * Unified method for single insert, bulk insert, update with where, and bulk update.
+	 * Automatically detects operation based on context.
 	 *
-	 * @param array $data Data to insert/update
-	 * @param bool $set_timestamps Whether to set date_created/date_modified
-	 * @return MySQLResponse Response with insert ID or affected rows
+	 * SINGLE INSERT - Associative array, no where clause:
+	 *   $query->save(['name' => 'John', 'email' => 'john@test.com']);
+	 *
+	 * BULK INSERT - Array of arrays, no where clause:
+	 *   $query->save([
+	 *       ['name' => 'John', 'email' => 'john@test.com'],
+	 *       ['name' => 'Jane', 'email' => 'jane@test.com']
+	 *   ]);
+	 *
+	 * UPDATE WITH WHERE - Any data, has where clause:
+	 *   $query->where('id = ?', 1)->save(['name' => 'Updated']);
+	 *
+	 * BULK UPDATE - Array of rows with key column (pass key as second param):
+	 *   $query->save([
+	 *       ['id' => 1, 'title' => 'New Title 1'],
+	 *       ['id' => 2, 'title' => 'New Title 2']
+	 *   ], 'id');
+	 *
+	 * Detection logic:
+	 *   - Second param is string → BULK UPDATE (different values per row)
+	 *   - Has where clause → UPDATE (same values to all matched rows)
+	 *   - No where + $data[0] is array → BULK INSERT
+	 *   - No where + associative array → SINGLE INSERT
+	 *
+	 * @param array $data Single record, multiple records, or rows for bulk update
+	 * @param string|bool $keyOrTimestamps Key column for bulk update (string) or timestamps flag (bool)
+	 * @param bool $set_timestamps Whether to set timestamps (only used with bulk update)
+	 * @return mixed Insert ID for single insert, affected rows for bulk insert/update
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function save($data, $set_timestamps = false)
+	public function save($data, $keyOrTimestamps = false, $set_timestamps = false)
 	{
-		$doInsert = sizeof($this->where) == 0;
+		// Bulk UPDATE - second param is string (key column name)
+		if (is_string($keyOrTimestamps)) {
+			return $this->update($data, $keyOrTimestamps, $set_timestamps);
+		}
 
-		if ($doInsert) {
-			$sql = $this->buildInsert($data, $set_timestamps);
+		// For insert/update, second param is timestamps boolean
+		$timestamps = $keyOrTimestamps;
+		$hasWhere = sizeof($this->where) > 0;
+
+		if ($hasWhere) {
+			// UPDATE - same values to all rows matching where clause
+			$sql = $this->buildUpdate($data, $timestamps);
 		} else {
-			$sql = $this->buildUpdate($data, $set_timestamps);
+			// INSERT - detect single vs bulk
+			$isBulk = isset($data[0]) && is_array($data[0]);
+
+			if ($isBulk) {
+				$sql = $this->buildBulkInsert($data, $timestamps);
+			} else {
+				$sql = $this->buildInsert($data, $timestamps);
+			}
 		}
 
 		if ($this->returnSql) {
@@ -2619,10 +2735,11 @@ class MySQLQuery
 			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
 		}
 
-		if ($doInsert) {
-			return $this->connector->lastInsertId();
-		} else {
+		if ($hasWhere) {
 			return $this->connector->affectedRows();
+		} else {
+			// For inserts, return last insert ID (for bulk, this is the first ID)
+			return $this->connector->lastInsertId();
 		}
 	}
 
@@ -2662,33 +2779,62 @@ class MySQLQuery
 	}
 
 	/**
-	 * Execute bulk INSERT or UPDATE query
+	 * Bulk UPDATE with different values per row
 	 *
-	 * Determines whether to INSERT or UPDATE based on WHERE clause.
-	 * More efficient than multiple save() calls.
+	 * Updates multiple rows with different values in a single query using
+	 * CASE WHEN statements. Much more efficient than multiple UPDATE queries.
 	 *
-	 * @param array $data Multidimensional array of records
-	 * @param array $fields Field names (for bulk update)
-	 * @param array $ids ID values (for bulk update)
-	 * @param string $key Primary key name (for bulk update)
-	 * @param bool $set_timestamps Whether to set timestamps
-	 * @return MySQLResponse Response with insert ID or affected rows
+	 * Data Structure:
+	 *   Same format as bulk INSERT - the key column is inside each row:
+	 *   [
+	 *       ['id' => 1, 'views' => 100, 'title' => 'New Title'],
+	 *       ['id' => 2, 'views' => 200, 'title' => 'Other Title'],
+	 *       ['id' => 3, 'views' => 50, 'title' => 'Third Title'],
+	 *   ]
+	 *
+	 * SQL Generated:
+	 *   UPDATE table SET
+	 *     views = (CASE id WHEN 1 THEN 100 WHEN 2 THEN 200 WHEN 3 THEN 50 END),
+	 *     title = (CASE id WHEN 1 THEN 'New Title' WHEN 2 THEN 'Other Title' ... END)
+	 *   WHERE id IN (1, 2, 3)
+	 *
+	 * Performance:
+	 *   - Old: 1000 rows = 1000 UPDATE queries
+	 *   - New: 1000 rows = 1 UPDATE query with CASE statements
+	 *
+	 * Usage (called from Model::save with 2 arguments):
+	 *   PageModel::save([
+	 *       ['id' => 1, 'views' => 100],
+	 *       ['id' => 2, 'views' => 200],
+	 *   ], 'id');
+	 *
+	 * @param array $data Array of rows, each containing the key column and fields to update
+	 * @param string $key Identifier column name (e.g., 'id', 'url_hash')
+	 * @param bool $set_timestamps Whether to set date_modified timestamp
+	 * @return int Number of affected rows
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function saveBulk($data, $fields = null, $ids = null, $key = null, $set_timestamps = false)
+	public function update($data, $key, $set_timestamps = false)
 	{
-		$doInsert = false;
+		// Extract IDs and rekey data by ID for buildBulkUpdate
+		$ids = [];
+		$rekeyedData = [];
 
-		//if (sizeof($this->where) == 0) $doInsert = true;
-		if ($fields == null) $doInsert = true;
+		foreach ($data as $row) {
+			$id = $row[$key];
+			$ids[] = $id;
 
-		if ($doInsert) {
-			$sql = $this->buildBulkInsert($data, $set_timestamps);
-		} else {
-			$sql = $this->buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps);
+			// Remove key from row data (we don't want to update the key itself)
+			unset($row[$key]);
+			$rekeyedData[$id] = $row;
 		}
 
-		if ($this->returnSql) { 
+		// Get field names from first row (excluding key)
+		$fields = array_keys(reset($rekeyedData));
+
+		$sql = $this->buildBulkUpdate($rekeyedData, $fields, $ids, $key, $set_timestamps);
+
+		if ($this->returnSql) {
 			return $sql;
 		}
 
@@ -2698,11 +2844,7 @@ class MySQLQuery
 			throw new DatabaseException($this->connector->lastError() . '<br><br><strong>SQL:</strong><br>' . htmlspecialchars($sql));
 		}
 
-		if ($doInsert) {
-			return $this->connector->lastInsertId();
-		} else {
-			return $this->connector->affectedRows();
-		}
+		return $this->connector->affectedRows();
 	}
 
 	/**
@@ -3052,29 +3194,60 @@ class MySQLQuery
 	 * Efficiently increments fields for multiple records in a single query using CASE statements.
 	 * Much faster than individual increment() calls in a loop.
 	 *
-	 * Generated SQL Example:
-	 *   UPDATE domain_stats
-	 *   SET active_pages = CASE
-	 *           WHEN id = 1 THEN active_pages + 5
-	 *           WHEN id = 2 THEN active_pages + 3
-	 *           ELSE active_pages
-	 *       END,
-	 *       failed_pages = CASE
-	 *           WHEN id = 1 THEN failed_pages + 2
-	 *           ELSE failed_pages
-	 *       END
+	 * Data Structure:
+	 *   Same format as bulk update - key column is inside each row:
+	 *   [
+	 *       ['id' => 1, 'views' => 10, 'shares' => 2],
+	 *       ['id' => 2, 'views' => 5, 'shares' => 1],
+	 *   ]
+	 *
+	 *   Supports flexible columns - rows can have different fields:
+	 *   [
+	 *       ['id' => 1, 'forbidden_errors' => 1],
+	 *       ['id' => 2, 'rate_limit_errors' => 1],
+	 *       ['id' => 3, 'server_errors' => 3],
+	 *   ]
+	 *   Missing fields keep their original value via ELSE clause.
+	 *
+	 * Generated SQL:
+	 *   UPDATE table SET
+	 *     views = CASE WHEN id = 1 THEN views + 10 WHEN id = 2 THEN views + 5 ELSE views END,
+	 *     shares = CASE WHEN id = 1 THEN shares + 2 WHEN id = 2 THEN shares + 1 ELSE shares END
 	 *   WHERE id IN (1, 2)
 	 *
-	 * @param array $data Data keyed by ID: [id => ['field' => incrementValue]]
-	 * @param array $fields Array of field names to increment
-	 * @param array $ids Array of IDs to update
-	 * @param string $key Key column name (default: 'id')
+	 * @param array $data Array of rows, each with key column and fields to increment
+	 * @param string $key Key column name (e.g., 'id')
 	 * @return int Number of rows affected
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function incrementBulk($data, $fields, $ids, $key = 'id')
+	public function incrementBulk($data, $key)
 	{
-		if (empty($data) || empty($fields) || empty($ids)) {
+		if (empty($data)) {
+			return 0;
+		}
+
+		// Extract IDs and rekey data
+		$ids = [];
+		$rekeyedData = [];
+
+		foreach ($data as $row) {
+			$id = $row[$key];
+			$ids[] = $id;
+
+			unset($row[$key]);
+			$rekeyedData[$id] = $row;
+		}
+
+		// Get ALL unique field names from ALL rows (flexible columns)
+		$fields = [];
+		foreach ($rekeyedData as $values) {
+			foreach (array_keys($values) as $field) {
+				$fields[$field] = true;
+			}
+		}
+		$fields = array_keys($fields);
+
+		if (empty($fields)) {
 			return 0;
 		}
 
@@ -3082,7 +3255,7 @@ class MySQLQuery
 		$setClauses = [];
 		foreach ($fields as $field) {
 			$cases = [];
-			foreach ($data as $id => $values) {
+			foreach ($rekeyedData as $id => $values) {
 				$amount = (int)($values[$field] ?? 0);
 				if ($amount > 0) {
 					$cases[] = "WHEN {$key} = {$id} THEN {$field} + {$amount}";
@@ -3118,21 +3291,60 @@ class MySQLQuery
 	}
 
 	/**
-	 * Bulk decrement fields for multiple records
+	 * Bulk decrement multiple rows with different values
 	 *
-	 * Efficiently decrements fields for multiple records in a single query.
-	 * Mirrors incrementBulk but subtracts values instead.
+	 * Efficiently decrements fields for multiple records in a single query using CASE statements.
+	 * Much faster than individual decrement() calls in a loop.
 	 *
-	 * @param array $data Data keyed by ID: [id => ['field' => decrementValue]]
-	 * @param array $fields Array of field names to decrement
-	 * @param array $ids Array of IDs to update
-	 * @param string $key Key column name (default: 'id')
+	 * Data Structure:
+	 *   Same format as bulk update - key column is inside each row:
+	 *   [
+	 *       ['id' => 1, 'stock' => 10, 'reserved' => 2],
+	 *       ['id' => 2, 'stock' => 5, 'reserved' => 1],
+	 *   ]
+	 *
+	 *   Supports flexible columns - rows can have different fields.
+	 *   Missing fields keep their original value via ELSE clause.
+	 *
+	 * Generated SQL:
+	 *   UPDATE table SET
+	 *     stock = CASE WHEN id = 1 THEN stock - 10 WHEN id = 2 THEN stock - 5 ELSE stock END,
+	 *     reserved = CASE WHEN id = 1 THEN reserved - 2 WHEN id = 2 THEN reserved - 1 ELSE reserved END
+	 *   WHERE id IN (1, 2)
+	 *
+	 * @param array $data Array of rows, each with key column and fields to decrement
+	 * @param string $key Key column name (e.g., 'id')
 	 * @return int Number of rows affected
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function decrementBulk($data, $fields, $ids, $key = 'id')
+	public function decrementBulk($data, $key)
 	{
-		if (empty($data) || empty($fields) || empty($ids)) {
+		if (empty($data)) {
+			return 0;
+		}
+
+		// Extract IDs and rekey data
+		$ids = [];
+		$rekeyedData = [];
+
+		foreach ($data as $row) {
+			$id = $row[$key];
+			$ids[] = $id;
+
+			unset($row[$key]);
+			$rekeyedData[$id] = $row;
+		}
+
+		// Get ALL unique field names from ALL rows (flexible columns)
+		$fields = [];
+		foreach ($rekeyedData as $values) {
+			foreach (array_keys($values) as $field) {
+				$fields[$field] = true;
+			}
+		}
+		$fields = array_keys($fields);
+
+		if (empty($fields)) {
 			return 0;
 		}
 
@@ -3140,7 +3352,7 @@ class MySQLQuery
 		$setClauses = [];
 		foreach ($fields as $field) {
 			$cases = [];
-			foreach ($data as $id => $values) {
+			foreach ($rekeyedData as $id => $values) {
 				$amount = (int)($values[$field] ?? 0);
 				if ($amount > 0) {
 					$cases[] = "WHEN {$key} = {$id} THEN {$field} - {$amount}";
