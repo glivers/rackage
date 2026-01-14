@@ -215,14 +215,15 @@ class MySQLQuery
 	}
 
 	/**
-	 * Enable unbuffered query execution
+	 * Enable streaming query execution (unbuffered mode)
 	 *
 	 * Streams results row-by-row instead of loading entire result set into memory.
+	 * Uses MySQL's MYSQLI_USE_RESULT flag to enable unbuffered mode.
 	 * Essential for processing large datasets (millions of rows) without memory exhaustion.
 	 *
 	 * Memory comparison:
 	 *   Buffered (default): 100M rows × 60 bytes = 6 GB in memory
-	 *   Unbuffered: 1 row × 60 bytes = 60 bytes in memory at a time
+	 *   Unbuffered (stream): 1 row × 60 bytes = 60 bytes in memory at a time
 	 *
 	 * Use for:
 	 *   - Large result sets (millions of rows)
@@ -235,14 +236,14 @@ class MySQLQuery
 	 *   - Multiple concurrent queries on same connection
 	 *
 	 * Examples:
-	 *   $result = LinkModel::noBuffer()->select(['source', 'target'])->all();
+	 *   $result = LinkModel::stream()->select(['source', 'target'])->all();
 	 *   while ($row = $result->fetch_assoc()) {
 	 *       // Process one row at a time (minimal memory)
 	 *   }
 	 *
 	 * @return $this For method chaining
 	 */
-	public function noBuffer()
+	public function stream()
 	{
 		$this->unbuffered = true;
 		return $this;
@@ -260,7 +261,7 @@ class MySQLQuery
 	 * Limitations:
 	 *   - One async query at a time per connection
 	 *   - Must await() before starting another async query
-	 *   - Cannot be combined with noBuffer()
+	 *   - Cannot be combined with stream() (unbuffered mode)
 	 *
 	 * Examples:
 	 *   // Fire query, do other work, then get result
@@ -305,7 +306,7 @@ class MySQLQuery
 	 * @param mixed $value Value to quote (string, int, array, null, bool)
 	 * @return mixed Quoted and escaped value
 	 */
-	protected function quote($value)
+	public function quote($value)
 	{
 		// String or integer - escape and quote
 		if (is_string($value) || is_int($value))
@@ -1696,7 +1697,7 @@ class MySQLQuery
 		if ($this->exists()) {
 			return $this->save($values);
 		} else {
-			$insertQuery = new static(['connector' => $this->connector], $this->from, false);
+			$insertQuery = new static(['connector' => $this->connector], $this->from, $this->timestamps);
 			$insertQuery->from = $this->from;
 			return $insertQuery->save($values);
 		}
@@ -1726,12 +1727,12 @@ class MySQLQuery
 		if ($existing) {
 			return $existing;
 		} else {
-			$insertQuery = new static(['connector' => $this->connector], $this->from, false);
+			$insertQuery = new static(['connector' => $this->connector], $this->from, $this->timestamps);
 			$insertQuery->from = $this->from;
 
 			$lastId = $insertQuery->save($values);
 
-			$newQuery = new static(['connector' => $this->connector], $this->from, false);
+			$newQuery = new static(['connector' => $this->connector], $this->from, $this->timestamps);
 			$newQuery->from = $this->from;
 
 			return $newQuery->where('id', $lastId)->first();
@@ -2367,13 +2368,13 @@ class MySQLQuery
 	 * Build INSERT query string
 	 *
 	 * Constructs INSERT query for single row.
-	 * Optionally sets date_created timestamp.
+	 * Optionally sets created_at timestamp.
 	 *
 	 * Query Template:
 	 *   INSERT INTO table (fields) VALUES (values)
 	 *
 	 * @param array $data Associative array of field => value pairs
-	 * @param bool $set_timestamps Whether to set date_created field
+	 * @param bool $set_timestamps Whether to set created_at field
 	 * @return string Complete INSERT query
 	 */
 	protected function buildInsert($data, $set_timestamps)
@@ -2385,7 +2386,7 @@ class MySQLQuery
 		// Add timestamp if requested
 		if($set_timestamps)
 		{
-			$data['date_created'] = date('Y-m-d h:i:s');
+			$data['created_at'] = date('Y-m-d H:i:s');
 		}
 
 		// Build fields and values
@@ -2413,7 +2414,7 @@ class MySQLQuery
 	 *   INSERT INTO table (fields) VALUES (row1), (row2), (row3)
 	 *
 	 * @param array $data Multidimensional array of rows
-	 * @param bool $set_timestamps Whether to set date_created field
+	 * @param bool $set_timestamps Whether to set created_at field
 	 * @return string Complete INSERT query
 	 */
 	protected function buildBulkInsert($data, $set_timestamps)
@@ -2462,13 +2463,13 @@ class MySQLQuery
 	 *
 	 * Constructs UPDATE query for single or multiple records.
 	 * Uses WHERE clause to target specific records.
-	 * Optionally sets date_modified timestamp.
+	 * Optionally sets updated_at timestamp.
 	 *
 	 * Query Template:
 	 *   UPDATE table SET field1=value1, field2=value2 WHERE conditions LIMIT n
 	 *
 	 * @param array $data Associative array of field => value pairs to update
-	 * @param bool $set_timestamps Whether to set date_modified field
+	 * @param bool $set_timestamps Whether to set updated_at field
 	 * @return string Complete UPDATE query
 	 */
 	protected function buildUpdate($data, $set_timestamps)
@@ -2480,7 +2481,7 @@ class MySQLQuery
 		// Add timestamp if requested
 		if($set_timestamps)
 		{
-			$data['date_modified'] = date('Y-m-d h:i:s');
+			$data['updated_at'] = date('Y-m-d H:i:s');
 		}
 
 		// Build SET clause
@@ -2551,7 +2552,7 @@ class MySQLQuery
 	 * @param array $fields Field names to update
 	 * @param array $ids ID values for WHERE IN clause
 	 * @param string $key Primary key column name (e.g., 'id')
-	 * @param bool $set_timestamps Whether to add date_modified timestamp
+	 * @param bool $set_timestamps Whether to add updated_at timestamp
 	 * @return string Complete UPDATE query
 	 */
 	protected function buildBulkUpdate($data, $fields, $ids, $key, $set_timestamps = false)
@@ -2583,7 +2584,7 @@ class MySQLQuery
 		// Add timestamp if requested (applies to all rows)
 		if ($set_timestamps)
 		{
-			$parts[] = "date_modified = '" . date('Y-m-d H:i:s') . "'";
+			$parts[] = "updated_at = '" . date('Y-m-d H:i:s') . "'";
 		}
 
 		// Convert parts to string
@@ -2695,33 +2696,31 @@ class MySQLQuery
 	 *   - No where + associative array → SINGLE INSERT
 	 *
 	 * @param array $data Single record, multiple records, or rows for bulk update
-	 * @param string|bool $keyOrTimestamps Key column for bulk update (string) or timestamps flag (bool)
+	 * @param string|bool $key Key column for bulk update (string) or timestamps flag (bool)
 	 * @param bool $set_timestamps Whether to set timestamps (only used with bulk update)
 	 * @return mixed Insert ID for single insert, affected rows for bulk insert/update
 	 * @throws DatabaseException If query execution fails
 	 */
-	public function save($data, $keyOrTimestamps = false, $set_timestamps = false)
+	public function save($data, $key = false)
 	{
 		// Bulk UPDATE - second param is string (key column name)
-		if (is_string($keyOrTimestamps)) {
-			return $this->update($data, $keyOrTimestamps, $set_timestamps);
+		if (is_string($key)) {
+			return $this->update($data, $key, $this->timestamps);
 		}
 
-		// For insert/update, second param is timestamps boolean
-		$timestamps = $keyOrTimestamps;
 		$hasWhere = sizeof($this->where) > 0;
 
 		if ($hasWhere) {
 			// UPDATE - same values to all rows matching where clause
-			$sql = $this->buildUpdate($data, $timestamps);
+			$sql = $this->buildUpdate($data, $this->timestamps);
 		} else {
 			// INSERT - detect single vs bulk
 			$isBulk = isset($data[0]) && is_array($data[0]);
 
 			if ($isBulk) {
-				$sql = $this->buildBulkInsert($data, $timestamps);
+				$sql = $this->buildBulkInsert($data, $this->timestamps);
 			} else {
-				$sql = $this->buildInsert($data, $timestamps);
+				$sql = $this->buildInsert($data, $this->timestamps);
 			}
 		}
 
@@ -2749,11 +2748,10 @@ class MySQLQuery
 	 * Extracts ID from data array, sets WHERE clause, and executes update.
 	 *
 	 * @param array $data Data array containing 'id' key and fields to update
-	 * @param bool $set_timestamps Whether to set timestamps
 	 * @return int Number of affected rows
 	 * @throws DatabaseException If ID missing or no data to update
 	 */
-	public function saveById($data, $set_timestamps = false)
+	public function saveById($data)
 	{
 		// Validate ID exists in data
 		if (!isset($data['id']))
@@ -2775,7 +2773,7 @@ class MySQLQuery
 		$this->where('id = ?', $id);
 
 		// Execute update via save()
-		return $this->save($data, $set_timestamps);
+		return $this->save($data);
 	}
 
 	/**
@@ -2810,7 +2808,7 @@ class MySQLQuery
 	 *
 	 * @param array $data Array of rows, each containing the key column and fields to update
 	 * @param string $key Identifier column name (e.g., 'id', 'url_hash')
-	 * @param bool $set_timestamps Whether to set date_modified timestamp
+	 * @param bool $set_timestamps Whether to set updated_at timestamp
 	 * @return int Number of affected rows
 	 * @throws DatabaseException If query execution fails
 	 */
@@ -2875,19 +2873,18 @@ class MySQLQuery
 	 *   ]);
 	 *
 	 * @param array $data Single record or array of records
-	 * @param bool $set_timestamps Whether to set timestamps
 	 * @return int Number of rows actually inserted (excludes duplicates)
 	 */
-	public function saveIgnore($data, $set_timestamps = false)
+	public function saveIgnore($data)
 	{
 		// Detect if bulk insert (array of arrays) or single insert (associative array)
 		$isBulk = isset($data[0]) && is_array($data[0]);
 
 		// Build appropriate INSERT IGNORE query
 		if ($isBulk) {
-			$sql = $this->buildBulkInsertIgnore($data, $set_timestamps);
+			$sql = $this->buildBulkInsertIgnore($data, $this->timestamps);
 		} else {
-			$sql = $this->buildInsertIgnore($data, $set_timestamps);
+			$sql = $this->buildInsertIgnore($data, $this->timestamps);
 		}
 
 		if ($this->returnSql) {
@@ -2926,7 +2923,7 @@ class MySQLQuery
 		// Add timestamp if requested
 		if($set_timestamps)
 		{
-			$data['date_created'] = date('Y-m-d h:i:s');
+			$data['created_at'] = date('Y-m-d H:i:s');
 		}
 
 		// Build fields and values
@@ -3020,18 +3017,17 @@ class MySQLQuery
 	 *
 	 * @param array $data Single record or array of records
 	 * @param array|null $fields Fields to update (null = all fields)
-	 * @param bool $set_timestamps Whether to set timestamps
 	 * @return int Number of affected rows
 	 */
-	public function saveUpdate($data, $fields = null, $set_timestamps = false)
+	public function saveUpdate($data, $fields = null)
 	{
 		$isBulk = isset($data[0]) && is_array($data[0]);
 
 		if ($isBulk) {
-			$sql = $this->buildBulkInsertUpdate($data, $fields, $set_timestamps);
+			$sql = $this->buildBulkInsertUpdate($data, $fields, $this->timestamps);
 		}
 		else {
-			$sql = $this->buildInsertUpdate($data, $fields, $set_timestamps);
+			$sql = $this->buildInsertUpdate($data, $fields, $this->timestamps);
 		}
 
 		if ($this->returnSql) {
@@ -3059,14 +3055,14 @@ class MySQLQuery
 	 *   ON DUPLICATE KEY UPDATE f1 = VALUES(f1), f2 = expression
 	 *
 	 * Process:
-	 *   1. Add date_created timestamp if requested
+	 *   1. Add created_at timestamp if requested
 	 *   2. Extract field names and quoted values from data
 	 *   3. Build UPDATE clause via buildUpdateClause()
 	 *   4. Assemble complete query string
 	 *
 	 * @param array $data Single record to insert (associative array)
 	 * @param array|null $fields Fields to update on duplicate (null = all)
-	 * @param bool $set_timestamps Whether to add date_created
+	 * @param bool $set_timestamps Whether to add created_at
 	 * @return string Complete INSERT ... ON DUPLICATE KEY UPDATE query
 	 */
 	protected function buildInsertUpdate($data, $fields, $set_timestamps)
@@ -3076,7 +3072,7 @@ class MySQLQuery
 		$template = "INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s";
 
 		if ($set_timestamps) {
-			$data['date_created'] = date('Y-m-d H:i:s');
+			$data['created_at'] = date('Y-m-d H:i:s');
 		}
 
 		foreach ($data as $field => $value) {
@@ -3110,7 +3106,7 @@ class MySQLQuery
 	 *
 	 * @param array $data Array of records to insert
 	 * @param array|null $fields Fields to update on duplicate (null = all)
-	 * @param bool $set_timestamps Whether to add date_created
+	 * @param bool $set_timestamps Whether to add created_at
 	 * @return string Complete INSERT ... ON DUPLICATE KEY UPDATE query
 	 */
 	protected function buildBulkInsertUpdate($data, $fields, $set_timestamps)
