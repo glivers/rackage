@@ -194,7 +194,7 @@ class MySQL {
 		$this->host = $options->host;
 		$this->username = $options->username;
 		$this->password = $options->password;
-		$this->database = $options->database;
+		$this->database = $options->database ?? null;  // Optional for server-level connections
 		$this->port = $options->port;
 		$this->charset = $options->charset;
 		$this->engine = $options->engine;
