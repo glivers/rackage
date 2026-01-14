@@ -58,6 +58,7 @@
  *      - path()         Get request path (without query string)
  *      - url()          Get full URL
  *      - fullUrl()      Get full URL with query string
+ *      - fullUri()      Get request URI (path + query, no domain)
  *      - is()           Check if path matches pattern
  *      - segment()      Get URL segment by index
  *      - segments()     Get all URL segments
@@ -505,6 +506,24 @@ class Request {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         return $protocol . '://' . $host . $uri;
+    }
+
+    /**
+     * Get the full request URI (path + query string)
+     *
+     * Returns the request URI without protocol or host.
+     * Includes query string if present.
+     *
+     * Examples:
+     *   Request::fullUri();  // "/search?q=kenya&page=2"
+     *   Request::fullUri();  // "/blog/post/123"
+     *   Request::fullUri();  // "/"
+     *
+     * @return string The request URI with query string
+     */
+    public static function fullUri()
+    {
+        return $_SERVER['REQUEST_URI'] ?? '/';
     }
 
     /**
