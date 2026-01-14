@@ -378,12 +378,25 @@ class Session {
      *
      *   // Flash is automatically removed after display
      *
+     * When called with 2 arguments, sets flash data.
+     * When called with 1 argument, gets flash data.
+     *
+     * Examples:
+     *   Session::flash('error', 'Invalid credentials');  // set
+     *   Session::flash('error');                         // get
+     *
      * @param string $key Flash key
-     * @param mixed $value Flash value
-     * @return void
+     * @param mixed $value Flash value (omit to get)
+     * @return mixed|void Flash value when getting, void when setting
      */
-    public static function flash($key, $value)
+    public static function flash($key, $value = null)
     {
+        // Get mode: 1 argument
+        if (func_num_args() === 1) {
+            return self::getFlash($key);
+        }
+
+        // Set mode: 2 arguments
         $_SESSION[self::$flashKey][$key] = $value;
     }
 

@@ -21,10 +21,11 @@
  * - Echo with default: {{ $name or 'Guest' }}
  * - Escape directives: @@if → outputs literal @if
  * - Control structures: @if, @else, @elseif, @endif
+ * - Variable checks: @isset, @endisset
  * - Loops: @for, @foreach, @endforeach, @while, @endwhile
  * - Special loop: @loopelse / @empty / @endloop (foreach with empty fallback)
  * - File inclusion: @include('path/to/file')
- * - Layout inheritance: @extends('layout'), @section, @endsection, @parent
+ * - Layout inheritance: @extends('layout'), @section, @endsection, @parent, @yield
  *
  * COMPILATION PROCESS:
  * 1. Validate file exists
@@ -302,10 +303,17 @@ class Template {
 			// Replace block section @section('name') ... @endsection
 			$pattern2 = '/(?<!@)@section\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*\).*?(?<!@)@endsection/s';
 			$layoutContent = preg_replace($pattern2, $content, $layoutContent);
+
+			// Replace @yield('name') - cleaner alternative to @section('name'):
+			$pattern3 = '/(?<!@)@yield\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*\)/';
+			$layoutContent = preg_replace($pattern3, $content, $layoutContent);
 		}
 
 		// Clean up: Remove remaining empty placeholders
 		$layoutContent = preg_replace('/(?<!@)@section\(\s*[\'"][^\'"]+[\'"]\s*\):/', '', $layoutContent);
+
+		// Clean up: Remove remaining @yield with no matching section
+		$layoutContent = preg_replace('/(?<!@)@yield\(\s*[\'"][^\'"]+[\'"]\s*\)/', '', $layoutContent);
 
 		// Clean up: Keep default content for undefined sections
 		$layoutContent = preg_replace_callback(
@@ -538,6 +546,47 @@ class Template {
 	}
 
 	/**
+	 * Compile @isset statements
+	 *
+	 * Convenience directive to check if a variable is set and not null.
+	 * Equivalent to PHP's isset() function.
+	 *
+	 * Examples:
+	 *   @isset($user)
+	 *       <p>Welcome, {{ $user->name }}</p>
+	 *   @endisset
+	 *
+	 *   @isset($post->author)
+	 *       <span>By {{ $post->author }}</span>
+	 *   @endisset
+	 *
+	 * Multiple variables:
+	 *   @isset($user, $posts)
+	 *       <p>User has {{ count($posts) }} posts</p>
+	 *   @endisset
+	 *
+	 * @param string $expression The isset expression with variable(s) to check
+	 * @return string Compiled PHP code
+	 */
+	protected function compileIsset($expression)
+	{
+		return "<?php if(isset{$expression}): ?>";
+	}
+
+	/**
+	 * Compile @endisset statements
+	 *
+	 * Closes an @isset block.
+	 *
+	 * @param string $expression Not used
+	 * @return string Compiled PHP code
+	 */
+	protected function compileEndisset($expression)
+	{
+		return "<?php endif; ?>";
+	}
+
+	/**
 	 * Compile @elseif statements.
 	 *
 	 * @param string $expression
@@ -625,6 +674,93 @@ class Template {
 	protected function compileEndloop($expression)
 	{
 		return "<?php endif; ?>";
+	}
+
+	/**
+	 * Compile @php statements.
+	 *
+	 * Opens a raw PHP block. Use for complex logic that doesn't
+	 * fit cleanly into template directives.
+	 *
+	 * Usage:
+	 *   @php
+	 *       $total = array_sum($prices);
+	 *       $formatted = number_format($total, 2);
+	 *   @endphp
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compilePhp($expression)
+	{
+		return '<?php ';
+	}
+
+	/**
+	 * Compile @endphp statements.
+	 *
+	 * Closes a raw PHP block opened with @php.
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileEndphp($expression)
+	{
+		return ' ?>';
+	}
+
+	/**
+	 * Compile @break statements.
+	 *
+	 * Breaks out of a loop. Can be used with optional condition.
+	 *
+	 * Usage:
+	 *   @foreach($users as $user)
+	 *       @break($user->id === $targetId)
+	 *       {{ $user->name }}
+	 *   @endforeach
+	 *
+	 * Or unconditionally:
+	 *   @break
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileBreak($expression)
+	{
+		if ($expression) {
+
+			return "<?php if{$expression}: break; endif; ?>";
+		}
+
+		return '<?php break; ?>';
+	}
+
+	/**
+	 * Compile @continue statements.
+	 *
+	 * Skips to next iteration of a loop. Can be used with optional condition.
+	 *
+	 * Usage:
+	 *   @foreach($users as $user)
+	 *       @continue($user->inactive)
+	 *       {{ $user->name }}
+	 *   @endforeach
+	 *
+	 * Or unconditionally:
+	 *   @continue
+	 *
+	 * @param string $expression
+	 * @return string
+	 */
+	protected function compileContinue($expression)
+	{
+		if ($expression) {
+
+			return "<?php if{$expression}: continue; endif; ?>";
+		}
+
+		return '<?php continue; ?>';
 	}
 
 	/**

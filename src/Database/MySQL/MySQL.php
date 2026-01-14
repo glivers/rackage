@@ -161,7 +161,7 @@ class MySQL {
 	// =========================================================================
 	// CONSTRUCTOR
 	// =========================================================================
-
+ 
 	/**
 	 * Initialize MySQL driver with connection parameters
 	 *
@@ -194,7 +194,7 @@ class MySQL {
 		$this->host = $options->host;
 		$this->username = $options->username;
 		$this->password = $options->password;
-		$this->database = $options->database;
+		$this->database = $options->database ?? null;  // Optional for server-level connections
 		$this->port = $options->port;
 		$this->charset = $options->charset;
 		$this->engine = $options->engine;
@@ -378,10 +378,19 @@ class MySQL {
 				return $this->connect() !== false;
 			}
 
-			// Ping the MySQL server
-			if (!$this->service->ping())
+			// Ping the MySQL server (may throw mysqli_sql_exception if connection lost)
+			try
 			{
-				// Connection lost - attempt reconnection
+				if (!$this->service->ping())
+				{
+					// Connection lost - attempt reconnection
+					$this->connected = false;
+					return $this->connect() !== false;
+				}
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Ping failed (connection lost) - attempt reconnection
 				$this->connected = false;
 				return $this->connect() !== false;
 			}
@@ -476,10 +485,14 @@ class MySQL {
 	 *
 	 * @return MySQLQuery New query builder instance
 	 */
-	public function query()
+	public function query($table, $timestamps)
 	{
 		// Create query builder with reference to this connection
-		return new MySQLQuery(array('connector' => $this));
+		return new MySQLQuery(
+			['connector' => $this],
+			$table,
+			$timestamps
+		);
 	}
 
 	// =========================================================================
@@ -525,30 +538,156 @@ class MySQL {
 		try
 		{
 			// Require valid connection
-			if (!$this->validService())
-			{
+			if (!$this->validService()){
+
 				throw new DatabaseException("Not connected to a valid database service");
 			}
 
-			// Execute query
-			$result = $this->service->query($sql);
-
-			// Check for "MySQL server has gone away" error (2006)
-			if ($result === false && $this->service->errno == 2006)
+			// Execute query with auto-reconnect on "server has gone away"
+			try
 			{
+				$result = $this->service->query($sql);
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Check for "MySQL server has gone away" error (2006)
+				if ($this->service->errno == 2006){
+
+					// Attempt to reconnect and retry query once
+					if ($this->ping()) {
+						$result = $this->service->query($sql);
+					}
+					else{
+						throw $e; // Reconnection failed, re-throw
+					}
+				}
+				else {
+					$sqlPreview = strlen($sql) > 500 ? substr($sql, 0, 500) . '...[truncated]' : $sql;
+					throw new DatabaseException($e->getMessage() . "\nSQL: " . $sqlPreview, $e->getCode());
+				}
+			}
+
+			// Also check for false result with errno 2006 (fallback)
+			if ($result === false && $this->service->errno == 2006) {
 				// Attempt to reconnect and retry query once
-				if ($this->ping())
-				{
+				if ($this->ping()) {
 					$result = $this->service->query($sql);
 				}
 			}
 
 			return $result;
 		}
-		catch(DatabaseException $exception)
-		{
+		catch(DatabaseException $exception) {
+
 			$exception->errorShow();
+			throw $exception; // Re-throw so caller knows it failed
 		}
+	}
+
+	/**
+	 * Execute query in unbuffered mode (MYSQLI_USE_RESULT)
+	 *
+	 * Fetches rows one at a time from the server instead of loading all results
+	 * into memory. Critical for large result sets (millions of rows) to prevent
+	 * memory exhaustion.
+	 *
+	 * IMPORTANT NOTES:
+	 * - You MUST fetch ALL rows or call free() before running another query
+	 * - Memory usage stays constant regardless of result set size
+	 * - Ideal for export operations on large tables
+	 *
+	 * Performance:
+	 * - Network transfer speed: Same as buffered
+	 * - Memory usage: ~1KB (current row only) vs 100GB+ (buffered)
+	 * - Processing: Starts immediately vs waits for all rows
+	 *
+	 * @param string $sql SQL query
+	 * @return mysqli_result|bool Result object or false
+	 * @throws DatabaseException If not connected or query fails
+	 */
+	public function executeNoBuffer($sql)
+	{
+		try
+		{
+			// Require valid connection
+			if (!$this->validService()){
+				throw new DatabaseException("Not connected to a valid database service");
+			}
+
+			// Execute query with auto-reconnect on "server has gone away"
+			try
+			{
+				// Use real_query() + use_result() for unbuffered mode
+				$success = $this->service->real_query($sql);
+
+				if (!$success) {
+					return false;
+				}
+
+				// use_result() returns unbuffered result (fetches one row at a time)
+				$result = $this->service->use_result();
+				return $result;
+			}
+			catch (\mysqli_sql_exception $e)
+			{
+				// Check for "MySQL server has gone away" error (2006)
+				if ($this->service->errno == 2006){
+					// Attempt to reconnect and retry query once
+					if ($this->ping()) {
+						$success = $this->service->real_query($sql);
+						if ($success) {
+							return $this->service->use_result();
+						}
+						return false;
+					}
+					else{
+						throw $e; // Reconnection failed, re-throw
+					}
+				}
+				else {
+					throw $e; // Different error, re-throw
+				}
+			}
+		}
+		catch(DatabaseException $exception) {
+			$exception->errorShow();
+			throw $exception; // Re-throw so caller knows it failed
+		}
+	}
+
+	/**
+	 * Execute query asynchronously (non-blocking)
+	 *
+	 * Fires the query with MYSQLI_ASYNC flag and returns immediately.
+	 * The query runs in the background while PHP continues execution.
+	 *
+	 * Returns the mysqli connection for use with Promise, which will
+	 * poll for completion and reap the result when await() is called.
+	 *
+	 * Limitations:
+	 *   - One async query at a time per connection
+	 *   - Must await() result before starting another async query
+	 *   - Cannot use with unbuffered mode
+	 *
+	 * Usage:
+	 *   $mysqli = $connector->executeAsync($sql);
+	 *   $promise = new Promise($mysqli, fn($r) => $r->fetch_all());
+	 *   // ... do other work ...
+	 *   $result = $promise->await();
+	 *
+	 * @param string $sql SQL query to execute
+	 * @return \mysqli The connection (for Promise to poll/reap)
+	 * @throws DatabaseException If not connected
+	 */
+	public function executeAsync($sql)
+	{
+		if (!$this->validService()) {
+			throw new DatabaseException("Not connected to a valid database service");
+		}
+
+		$this->service->query($sql, MYSQLI_ASYNC);
+
+		return $this->service;
 	}
 
 	// =========================================================================
@@ -780,7 +919,7 @@ class MySQL {
 	 * @return string Error description, or empty string if no error
 	 * @throws DatabaseException If not connected to valid database service
 	 */
-	public function lastError()
+	public function lastError() 
 	{
 		try
 		{

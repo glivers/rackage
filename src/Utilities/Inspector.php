@@ -56,10 +56,10 @@ class Inspector {
      *
      * Examples:
      *   Input:  "/** @before checkAuth @before validateInput @after log *\/"
-     *   Output: ['before' => ['checkAuth', 'validateInput'], 'after' => ['log']]
+     *   Output: ['before' => [['checkAuth'], ['validateInput']], 'after' => [['log']]]
      *
-     *   Input:  "/** @before AuthFilter, check *\/"
-     *   Output: ['before' => ['AuthFilter', 'check']]
+     *   Input:  "/** @before AuthFilter check *\/"
+     *   Output: ['before' => [['AuthFilter', 'check']]]
      *
      *   Input:  "/** @param string $id *\/"  (no filters)
      *   Output: []
@@ -105,11 +105,11 @@ class Inspector {
                 }
             }
 
-            // Add to appropriate filter array
+            // Add to appropriate filter array (as nested array)
             if ($filterType === 'before') {
-                $beforeFilters = array_merge($beforeFilters, $cleanParts);
+                $beforeFilters[] = $cleanParts;
             } else {
-                $afterFilters = array_merge($afterFilters, $cleanParts);
+                $afterFilters[] = $cleanParts;
             }
         }
 

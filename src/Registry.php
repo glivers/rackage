@@ -94,11 +94,15 @@ class Registry {
 	/**
 	 * Registered framework resources
 	 * List of resources that can be lazy-loaded via Registry::get()
-	 * 
+	 *
 	 * @var array
 	 */
 	private static $resources = array(
-		'database',
+		'database-sync',
+		'database-async',
+		'database-stream',
+		'database-fresh',
+		'database-server',
 		'cache',
 		'template',
 	);
@@ -127,24 +131,43 @@ class Registry {
 	 * If not, creates it, caches it, then returns it.
 	 *
 	 * Usage:
-	 *   $db = Registry::get('database');
+	 *   $db = Registry::get('database-sync');
 	 *   $cache = Registry::get('cache');
 	 *   $template = Registry::get('template');
+	 *   $freshDb = Registry::get('database-fresh', 'fresh');  // Bypass cache
 	 *
-	 * @param string $key Resource name ('database', 'cache', 'template')
+	 * @param string $key Resource name ('database-sync', 'cache', 'template')
+	 * @param string $mode Optional mode flag ('fresh' to bypass caching)
 	 * @return object The resource instance
 	 * @throws \InvalidArgumentException If no resource name provided or resource not registered
 	 * @throws \RuntimeException If resource creation fails
 	 */
-	public static function get($key)
+	public static function get($key, $mode = null)
 	{
 		// Validate that a resource name was provided
 		if (func_num_args() == 0) {
 			throw new \InvalidArgumentException('Registry::get() requires a resource name');
 		}
 
-		// Get any additional arguments passed
-		$args = array_slice(func_get_args(), 1);
+		// Get any additional arguments passed (beyond $key and $mode)
+		$args = array_slice(func_get_args(), 2);
+
+		// Fresh mode bypasses cache - always create new instance
+		if ($mode === 'fresh') {
+			// Check if this is a registered resource
+			if (!in_array($key, static::$resources)) {
+				throw new \InvalidArgumentException("Resource '{$key}' is not registered in Registry");
+			}
+
+			// Create and return new instance without caching
+			$instance = static::getInstance($key, $args);
+
+			if (!$instance) {
+				throw new \RuntimeException("Failed to create instance of resource '{$key}'");
+			}
+
+			return $instance;
+		}
 
 		// Return cached instance if it exists
 		if (isset(static::$instances[$key])) {
@@ -327,8 +350,14 @@ class Registry {
 	 */
 	private static function getInstance($key, $args)
 	{
-		// Build method name: 'database' => 'getDatabase'
-		$method = 'get' . ucfirst($key) . 'Instance';
+		// Convert hyphenated keys to camelCase method names
+		// 'database-async' => 'DatabaseAsync'
+		// 'database-stream' => 'DatabaseStream'
+		$parts = explode('-', $key);
+		$camelCase = implode('', array_map('ucfirst', $parts));
+
+		// Build method name: 'database' => 'getDatabaseInstance'
+		$method = 'get' . $camelCase . 'Instance';
 
 		// Call the factory method
 		return static::$method($args);
@@ -346,13 +375,16 @@ class Registry {
 	}
 
 	/**
-	 * Create database connection instance
+	 * Create sync database connection instance
+	 *
+	 * Creates the main database connection used for synchronous queries.
+	 * This connection is cached as a singleton.
 	 *
 	 * @param array $args Additional arguments (unused)
 	 * @return object Database connection instance
 	 * @throws \RuntimeException If database config not loaded
 	 */
-	private static function getDatabaseInstance($args)
+	private static function getDatabaseSyncInstance($args)
 	{
 		// Get stored database configuration
 		$config = static::$database;
@@ -365,6 +397,126 @@ class Registry {
 		$instance = new Database(
 			$config['default'],
 			$config[$config['default']]
+		);
+
+		return $instance->initialize()->connect();
+	}
+
+	/**
+	 * Create async database connection instance
+	 *
+	 * Creates a separate database connection dedicated to async queries.
+	 * This connection is cached as a singleton separate from the main connection.
+	 *
+	 * @param array $args Additional arguments (unused)
+	 * @return object Database connection instance
+	 * @throws \RuntimeException If database config not loaded
+	 */
+	private static function getDatabaseAsyncInstance($args)
+	{
+		// Get stored database configuration
+		$config = static::$database;
+
+		if (empty($config)) {
+			throw new \RuntimeException('Database configuration not loaded. Call Registry::setDatabase() first.');
+		}
+
+		// Create and connect database instance
+		$instance = new Database(
+			$config['default'],
+			$config[$config['default']]
+		);
+
+		return $instance->initialize()->connect();
+	}
+
+	/**
+	 * Create streaming database connection instance
+	 *
+	 * Creates a separate database connection dedicated to unbuffered/streaming queries.
+	 * This connection is cached as a singleton separate from the main connection.
+	 *
+	 * @param array $args Additional arguments (unused)
+	 * @return object Database connection instance
+	 * @throws \RuntimeException If database config not loaded
+	 */
+	private static function getDatabaseStreamInstance($args)
+	{
+		// Get stored database configuration
+		$config = static::$database;
+
+		if (empty($config)) {
+			throw new \RuntimeException('Database configuration not loaded. Call Registry::setDatabase() first.');
+		}
+
+		// Create and connect database instance
+		$instance = new Database(
+			$config['default'],
+			$config[$config['default']]
+		);
+
+		return $instance->initialize()->connect();
+	}
+
+	/**
+	 * Create fresh database connection instance
+	 *
+	 * Creates a new database connection that is NOT cached. Each call returns
+	 * a completely new connection instance, allowing unlimited concurrent operations.
+	 *
+	 * Note: Unlike other connection types, this bypasses the singleton caching
+	 * in Registry::get() and returns a fresh connection every time.
+	 *
+	 * @param array $args Additional arguments (unused)
+	 * @return object Database connection instance
+	 * @throws \RuntimeException If database config not loaded
+	 */
+	private static function getDatabaseFreshInstance($args)
+	{
+		// Get stored database configuration
+		$config = static::$database;
+
+		if (empty($config)) {
+			throw new \RuntimeException('Database configuration not loaded. Call Registry::setDatabase() first.');
+		}
+
+		// Create and connect database instance
+		$instance = new Database(
+			$config['default'],
+			$config[$config['default']]
+		);
+
+		return $instance->initialize()->connect();
+	}
+
+	/**
+	 * Create server-level database connection instance (no database selected)
+	 *
+	 * Creates a database connection to the MySQL server without selecting a database.
+	 * Used for database-level operations: CREATE DATABASE, DROP DATABASE, SHOW DATABASES.
+	 * This connection is cached as a singleton separate from other connections.
+	 *
+	 * @param array $args Additional arguments (unused)
+	 * @return object Database connection instance
+	 * @throws \RuntimeException If database config not loaded
+	 */
+	private static function getDatabaseServerInstance($args)
+	{
+		// Get stored database configuration
+		$config = static::$database;
+
+		if (empty($config)) {
+			throw new \RuntimeException('Database configuration not loaded. Call Registry::setDatabase() first.');
+		}
+
+		// Clone config and remove database parameter
+		$serverConfig = $config[$config['default']];
+		unset($serverConfig['database']);
+
+		// Create and connect database instance without selecting a database
+		$instance = new Database(
+			$config['default'],
+			$serverConfig
 		);
 
 		return $instance->initialize()->connect();

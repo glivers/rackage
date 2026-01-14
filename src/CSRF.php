@@ -1,9 +1,9 @@
 <?php namespace Rackage;
 
 /**
- * CSRF Protection Helper
+ * Csrf Protection Helper
  *
- * Provides Cross-Site Request Forgery (CSRF) protection through secure
+ * Provides Cross-Site Request Forgery (Csrf) protection through secure
  * token generation and validation.
  *
  * Static Design:
@@ -13,29 +13,29 @@
  * Access Patterns:
  *
  *   In Controllers:
- *     use Rackage\CSRF;
+ *     use Rackage\Csrf;
  *
  *     class UserController extends Controller {
  *         public function postUpdate() {
- *             if (!CSRF::verify()) {
- *                 die('Invalid CSRF token');
+ *             if (!Csrf::verify()) {
+ *                 die('Invalid Csrf token');
  *             }
  *             // Process form...
  *         }
  *     }
  *
  *   In Views:
- *     CSRF is automatically available (configured in view_helpers).
+ *     Csrf is automatically available (configured in view_helpers).
  *     No 'use' statement needed.
  *
  *     <form method="POST" action="/user/update">
- *         {{ CSRF::field() }}
+ *         {{ Csrf::field() }}
  *         <input type="text" name="username">
  *         <button>Update</button>
  *     </form>
  *
  *   In AJAX:
- *     {{ CSRF::meta() }}
+ *     {{ Csrf::meta() }}
  *
  *     <script>
  *     fetch('/api/update', {
@@ -49,7 +49,7 @@
  * Usage Methods:
  *
  *   TOKEN GENERATION
- *   - token()       Get CSRF token string
+ *   - token()       Get Csrf token string
  *   - field()       Get HTML hidden input field
  *   - meta()        Get HTML meta tag (for AJAX)
  *
@@ -63,7 +63,7 @@
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
  * @category Rackage
- * @package Rackage\CSRF
+ * @package Rackage\Csrf
  * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.2
@@ -72,11 +72,11 @@
 use Rackage\Session;
 use Rackage\Input;
 
-class CSRF
+class Csrf
 {
 
     /**
-     * Session key for storing CSRF token
+     * Session key for storing Csrf token
      */
     private static $tokenKey = 'csrf_token';
 
@@ -97,21 +97,21 @@ class CSRF
     // =========================================================================
 
     /**
-     * Generate and retrieve CSRF token
+     * Generate and retrieve Csrf token
      *
      * Creates a cryptographically secure token if one doesn't exist.
      * Returns existing token if already generated.
      *
      * Examples:
-     *   $token = CSRF::token();  // "a1b2c3d4..."
-     *   <input type="hidden" value="{{ CSRF::token() }}">
+     *   $token = Csrf::token();  // "a1b2c3d4..."
+     *   <input type="hidden" value="{{ Csrf::token() }}">
      *
      * Security:
      *   - 64-character hex token (32 random bytes)
      *   - Session-specific (different per user)
      *   - Timing-safe validation
      *
-     * @return string CSRF token (64 hex characters)
+     * @return string Csrf token (64 hex characters)
      */
     public static function token()
     {
@@ -124,14 +124,14 @@ class CSRF
     }
 
     /**
-     * Get CSRF token as hidden form field
+     * Get Csrf token as hidden form field
      *
      * Returns complete HTML hidden input with token.
-     * Recommended way to add CSRF protection to forms.
+     * Recommended way to add Csrf protection to forms.
      *
      * Examples:
      *   <form method="POST">
-     *       {{ CSRF::field() }}
+     *       {{ Csrf::field() }}
      *       <input type="text" name="username">
      *   </form>
      *
@@ -139,7 +139,7 @@ class CSRF
      *   <input type="hidden" name="csrf_token" value="a1b2...">
      *
      * Validation in controller:
-     *   if (!CSRF::verify()) {
+     *   if (!Csrf::verify()) {
      *       die('Invalid token');
      *   }
      *
@@ -151,13 +151,13 @@ class CSRF
     }
 
     /**
-     * Get CSRF token as meta tag
+     * Get Csrf token as meta tag
      *
      * Returns HTML meta tag for AJAX/SPA/frontend frameworks.
      *
      * Examples:
      *   <!-- In layout head -->
-     *   {{ CSRF::meta() }}
+     *   {{ Csrf::meta() }}
      *
      *   <!-- JavaScript -->
      *   <script>
@@ -189,19 +189,19 @@ class CSRF
     // =========================================================================
 
     /**
-     * Validate CSRF token
+     * Validate Csrf token
      *
      * Compares provided token with session token using timing-safe comparison.
      *
      * Examples:
      *   $userToken = Input::post('csrf_token');
-     *   if (!CSRF::valid($userToken)) {
+     *   if (!Csrf::valid($userToken)) {
      *       die('Invalid token');
      *   }
      *
      *   // From HTTP header (AJAX)
      *   $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-     *   if (!CSRF::valid($token)) {
+     *   if (!Csrf::valid($token)) {
      *       http_response_code(403);
      *       exit;
      *   }
@@ -221,7 +221,7 @@ class CSRF
     }
 
     /**
-     * Verify CSRF token from request
+     * Verify Csrf token from request
      *
      * Auto-retrieves and validates token from POST or HTTP headers.
      * Easiest validation method.
@@ -232,14 +232,14 @@ class CSRF
      *
      * Examples:
      *   public function postUpdate() {
-     *       if (!CSRF::verify()) {
+     *       if (!Csrf::verify()) {
      *           die('Invalid token');
      *       }
      *       // Process form...
      *   }
      *
      *   // JSON API response
-     *   if (!CSRF::verify()) {
+     *   if (!Csrf::verify()) {
      *       return View::json(['error' => 'Invalid token'], 403);
      *   }
      *
@@ -268,7 +268,7 @@ class CSRF
     // =========================================================================
 
     /**
-     * Regenerate CSRF token
+     * Regenerate Csrf token
      *
      * Destroys current token and generates new one.
      * Important for security after privilege changes.
@@ -283,17 +283,17 @@ class CSRF
      *   // After login
      *   Session::set('user_id', $user->id);
      *   Session::refresh();   // Regenerate session ID
-     *   CSRF::regenerate();   // Regenerate CSRF token
+     *   Csrf::regenerate();   // Regenerate Csrf token
      *
      *   // After privilege change
      *   Users::where('id', $id)->save(['role' => 'admin']);
-     *   CSRF::regenerate();
+     *   Csrf::regenerate();
      *
      * Note:
      *   Old tokens become invalid. Open forms in other tabs will fail.
      *   This is expected security behavior.
      *
-     * @return string New CSRF token
+     * @return string New Csrf token
      */
     public static function regenerate()
     {

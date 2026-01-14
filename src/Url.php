@@ -126,7 +126,8 @@ class Url {
 	 */
 	public static function assets($assetName = null)
 	{
-		return self::buildBaseUrl() . 'public/' . ltrim($assetName, '/');
+		//return self::buildBaseUrl() . 'public/' . ltrim($assetName, '/');
+		return self::buildBaseUrl() . ltrim($assetName, '/');
 	}
 
 	/**

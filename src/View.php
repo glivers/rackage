@@ -55,8 +55,10 @@
 
 use Rackage\Path;
 use Rackage\Cache;
+use Rackage\Request;
 use Rackage\Registry;
 use Rackage\Templates\Template;
+use Rackage\Templates\TemplateStream;
 use Rackage\Templates\TemplateException;
 
 class View {
@@ -181,20 +183,21 @@ class View {
     /**
      * Render view file without template compilation
      *
-     * Renders a view file as raw PHP without template engine processing.
-     * Useful for legacy views, debugging, or when template syntax causes issues.
+     * Renders a view file as plain PHP without template engine processing.
+     * Use when a specific view shouldn't go through the template compiler,
+     * while other views in the app still use templating.
      *
      * Examples:
-     *   View::renderRaw('legacy.old');
-     *   View::renderRaw('debug.output', ['data' => $debugData]);
-     *   View::renderRaw('plain', [], 404);
+     *   View::plain('emails/receipt');
+     *   View::plain('exports/csv', ['rows' => $data]);
+     *   View::plain('errors/maintenance', [], 503);
      *
      * @param string $fileName View file path
      * @param array $data Optional associative array of variables
      * @param int $status HTTP status code (default 200)
      * @return void Outputs rendered view directly
      */
-    public static function renderRaw($fileName, array $data = [], $status = 200)
+    public static function plain($fileName, array $data = [], $status = 200)
     {
         self::renderView($fileName, $data, $status, false);
     }
@@ -222,21 +225,30 @@ class View {
         $errorPages = Registry::settings()['error_pages'] ?? [];
         $errorView = $errorPages[$code] ?? null;
 
-        if ($errorView) {
-            self::render($errorView, $data);
-        } else {
-            echo "<h1>Error $code</h1>";
-        }
+        if ($errorView) self::render($errorView, $data);
+   
+        else echo "<h1>Error $code</h1>";
     }
 
     /**
      * Internal render implementation
      *
      * Handles the actual rendering logic for both render() and renderRaw().
-     * Extracts variables, compiles template (if enabled), writes to temp file,
-     * includes it, then cleans up.
+     * Extracts variables, compiles template, and executes it.
+     *
+     * Rendering modes:
+     *   - Dev mode: File-based (better error paths for debugging)
+     *   - Production mode: Stream-based (zero disk I/O, 26x faster)
      *
      * If page caching is enabled, captures output and stores in cache.
+     *
+     * Process:
+     *   1. Set HTTP status code if not 200
+     *   2. Merge and extract variables into local scope
+     *   3. Compile template (if template engine enabled)
+     *   4. Execute via stream (production) or temp file (dev)
+     *   5. Handle page caching if enabled
+     *   6. Clean up and clear variables
      *
      * @param string $fileName View file path
      * @param array $data Variables to pass to view
@@ -256,53 +268,84 @@ class View {
             $allVariables = array_merge(self::$variables, $data);
 
             // Extract variables into local scope
-            foreach ($allVariables as $key => $value) {
-                $$key = $value;
-            }
+            // foreach ($allVariables as $key => $value) {
+                
+            //     $$key = $value;
+            // }
 
-            // Ensure tmp directory exists
-            $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
-            if (!is_dir($tmpDir)) {
-                mkdir($tmpDir, 0755, true);
-            }
+            extract($allVariables);
 
             // Determine whether to parse template
             $shouldParse = $parse && (Registry::settings()['template_engine'] !== false);
 
             // Get view contents (compiled or raw)
             if ($shouldParse) {
-                $contents = self::getHeaderContent() . self::getContents($fileName, false);
-            } else {
-                $filePath = Path::view($fileName);
-                $contents = self::getHeaderContent() . file_get_contents($filePath);
-            }
 
-            // Write to temp file
-            $file_write_path = $tmpDir . uniqid('view_', true) . '.php';
-            file_put_contents($file_write_path, $contents);
+                $contents = self::getHeaderContent() . self::getContents($fileName, false);
+            } 
+            else {
+
+                $contents = self::getHeaderContent() . file_get_contents(Path::view($fileName));
+            }
 
             // Check if Router decided this page should be cached
             $shouldCache = self::shouldCache();
 
             // Start output buffering if caching is enabled
-            if ($shouldCache)
-            {
+            if ($shouldCache) {
                 ob_start();
             }
 
-            // Include and render
-            include $file_write_path;
+            // =======================================================================
+            // RENDER TEMPLATE
+            // =======================================================================
+            //
+            // Two rendering modes based on environment:
+            //
+            // DEV MODE (file-based):
+            //   - Writes compiled template to vault/tmp/
+            //   - Better error paths in stack traces (real file paths)
+            //   - On error, temp file preserved for inspection
+            //   - On success, temp file deleted immediately
+            //
+            // PRODUCTION MODE (stream-based):
+            //   - Serves template directly from memory via stream wrapper
+            //   - Zero disk I/O (~26x faster than file-based)
+            //   - Consistent performance under server load
+            //   - No orphaned temp files, no disk wear
+            //
+            // =======================================================================
+
+            if (DEV) {
+
+                $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
+
+                if (!is_dir($tmpDir)) {
+                    mkdir($tmpDir, 0755, true);
+                }
+
+                $filePath = $tmpDir . uniqid('view_', true) . '.php';
+                file_put_contents($filePath, $contents);
+
+                include $filePath;
+
+                unlink($filePath);
+            }
+            else {
+
+                TemplateStream::setContent($contents);
+
+                include 'rachie-template://render';
+
+                TemplateStream::clearContent();
+            }
 
             // Store in cache if needed
-            if ($shouldCache)
-            {
+            if ($shouldCache) {
                 $output = ob_get_contents();
                 ob_end_flush();
                 self::storeCache($output);
             }
-
-            // Clean up temp file
-            unlink($file_write_path);
 
             // Clear variables after rendering
             self::$variables = array();
@@ -311,6 +354,7 @@ class View {
             throw $exception;
         }
     }
+
 
     /**
      * Get compiled template contents without rendering
@@ -375,6 +419,55 @@ class View {
         echo json_encode($data);
     }
 
+    /**
+     * Render output and halt execution
+     *
+     * Renders view/JSON/error page and immediately exits.
+     * Useful in filters to stop execution while returning output to user.
+     *
+     * Type-based dispatch:
+     *   - Array → JSON response
+     *   - Int → Error page (from error_pages config)
+     *   - String → Template render
+     *
+     * Examples:
+     *   View::halt(404);                                       // Error 404
+     *   View::halt(404, null, ['message' => 'Not found']);    // Error 404 with data
+     *   View::halt('errors/rate-limit', 429);                  // Template with 429 status
+     *   View::halt('errors/rate-limit', 429, $data);           // Template with status and data
+     *   View::halt(['error' => 'Unauthorized'], 401);          // JSON with 401 status
+     *
+     * WARNING: Calls exit() - no code after this runs (including @after filters)
+     *
+     * @param array|int|string $mode What to render (array=JSON, int=error, string=template)
+     * @param int|null $code HTTP status code (default: 200 for string/array, mode value for int)
+     * @param array $data Data to pass to template
+     * @return void (never returns - calls exit)
+     */
+    public static function halt($mode, $code = null, $data = [])
+    {
+        // Array → JSON response
+        if (is_array($mode)) {
+            self::json($mode, $code ?? 200);
+            exit;
+        }
+
+        // Int → error page
+        if (is_int($mode)) {
+            self::error($mode, $data);
+            exit;
+        }
+
+        // String → template render
+        if (is_string($mode)) {
+            self::render($mode, $data, $code ?? 200);
+            exit;
+        }
+
+        // Fallback - just exit
+        exit;
+    }
+
     // ===========================================================================
     // CACHE HANDLING
     // ===========================================================================
@@ -402,7 +495,7 @@ class View {
     private static function storeCache($output)
     {
         $cacheConfig = Registry::cache();
-        $requestUri = Registry::url();
+        $requestUri = Request::fullUri();
         $cacheKey = 'page:' . md5($requestUri);
         $lifetime = $cacheConfig['lifetime'] / 60;
 

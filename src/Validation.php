@@ -16,7 +16,7 @@
  * Usage Patterns:
  *
  *   // Basic validation
- *   $validator = Validate::make($data, [
+ *   $validator = Validation::make($data, [
  *       'email' => 'required|email',
  *       'password' => 'required|min:8',
  *   ]);
@@ -64,12 +64,12 @@
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
  * @category Rackage
- * @package Rackage\Validate
+ * @package Rackage\Validation
  * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.1
  */
-class Validate {
+class Validation {
 
     /**
      * Create a new validator instance
@@ -78,7 +78,7 @@ class Validate {
      * object that can be queried for errors.
      *
      * Examples:
-     *   $v = Validate::make($_POST, [
+     *   $v = Validation::make(Input::get(), [
      *       'email' => 'required|email',
      *       'age' => 'required|numeric|min:18',
      *       'password' => 'required|min:8|confirmed',
