@@ -67,20 +67,20 @@
  *
  *   CONVENIENCE:
  *   - getById($id)              Get by ID
- *   - getByDateCreated($date)   Get by date_created
- *   - getByDateModified($date)  Get by date_modified
+ *   - getByCreatedAt($date)     Get by created_at
+ *   - getByUpdatedAt($date)     Get by updated_at
  *
  *   RAW SQL:
  *   - sql($sql, ...$params)     Execute raw SQL with optional binding
  *
  * Security:
- *   - All queries use PDO prepared statements
- *   - Automatic parameter binding prevents SQL injection
+ *   - All values are automatically escaped using $mysqli->real_escape_string()
+ *   - Automatic escaping prevents SQL injection
  *   - Never concatenate user input into SQL
  *
  * Timestamps:
  *   Set protected static $timestamps = true in your model
- *   to automatically manage date_created and date_modified columns.
+ *   to automatically manage created_at and updated_at columns.
  *
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
@@ -108,10 +108,14 @@ class Model
 	public function __construct() {}
 
 	/**
-	 * Database connection instance
-	 * @var object
+	 * Database connection instances (sync, async, stream)
+	 * @var array
 	 */
-	protected static $connection;
+	protected static $connections = [
+		'sync' => null,
+		'async' => null,
+		'stream' => null
+	];
 
 	/**
 	 * Table name (overridden by child classes)
@@ -153,15 +157,40 @@ class Model
 	 * Lazy-loads database connection and query builder for this model instance.
 	 * Each instance has its own query builder to prevent state pollution.
 	 *
+	 * @param string|null $mode Connection mode: 'sync', 'async', 'stream', 'fresh', or 'server'
 	 * @return object Query builder instance
 	 */
-	protected function Query()
+	protected function Query($mode = null)
 	{
-		// Get connection if not set (shared across all models)
-		if(static::$connection === null) static::$connection = Registry::get('database');
+		$type = $mode ?? 'sync';
 
-		// Get query builder for this instance (unique per model call)
-		if($this->queryObject === null) $this->queryObject = static::$connection->query(static::$table, static::$timestamps);
+		// Build full registry key
+		$databases = [
+			'sync' => 'database-sync',
+			'async' => 'database-async',
+			'stream' => 'database-stream',
+			'fresh' => 'database-fresh',
+			'server' => 'database-server'
+		];
+
+		$database = $databases[$type];
+
+		if ($type === 'fresh') {
+			// Fresh connection - get new one each time, don't cache
+			$connection = Registry::get($database, 'fresh');
+			if ($this->queryObject === null) {
+				$this->queryObject = $connection->query(static::$table, static::$timestamps);
+			}
+		}
+		else {
+			// Cached connections (sync, async, stream)
+			if (static::$connections[$type] === null) {
+				static::$connections[$type] = Registry::get($database);
+			}
+			if ($this->queryObject === null) {
+				$this->queryObject = static::$connections[$type]->query(static::$table, static::$timestamps);
+			}
+		}
 
 		return $this->queryObject;
 	}
@@ -173,7 +202,7 @@ class Model
 	 *
 	 * @return void
 	 */
-	final private function setTable()
+	private function setTable()
 	{
 		$this->Query()->setTable(static::$table);
 	}
@@ -240,14 +269,15 @@ class Model
 	}
 
 	/**
-	 * Enable unbuffered query execution
+	 * Enable streaming query execution (unbuffered mode)
 	 *
 	 * Streams results row-by-row instead of loading entire result set into memory.
-	 * Essential for processing large datasets (millions of rows) without memory exhaustion.
+	 * Uses MySQL's unbuffered mode (MYSQLI_USE_RESULT) to process large datasets
+	 * without memory exhaustion.
 	 *
 	 * Memory comparison:
 	 *   Buffered (default):  100M rows × 60 bytes = 6 GB in memory
-	 *   Unbuffered:          1 row × 60 bytes = 60 bytes in memory at a time
+	 *   Unbuffered (stream): 1 row × 60 bytes = 60 bytes in memory at a time
 	 *
 	 * Use for:
 	 *   - Large result sets (millions of rows)
@@ -262,14 +292,14 @@ class Model
 	 *
 	 * Examples:
 	 *   // PageRank: Process 100M links without loading all into memory
-	 *   $result = LinkModel::noBuffer()->select(['source', 'target'])->all();
+	 *   $result = LinkModel::stream()->select(['source', 'target'])->all();
 	 *   while ($row = $result->fetch_assoc()) {
 	 *       // Build graph incrementally (only 1 row in memory at a time)
 	 *       $graph['inbound'][$row['target']][] = $row['source'];
 	 *   }
 	 *
 	 *   // Export: Stream large table to file
-	 *   $result = UserModel::noBuffer()->select(['id', 'email'])->all();
+	 *   $result = UserModel::stream()->select(['id', 'email'])->all();
 	 *   while ($row = $result->fetch_assoc()) {
 	 *       fputcsv($file, $row);
 	 *   }
@@ -279,14 +309,18 @@ class Model
 	 *   - Use fetch_assoc() in while loop to iterate
 	 *   - Cannot use result_array() (defeats the purpose)
 	 *
-	 * @return static Returns query builder instance in unbuffered mode
+	 * @return static Returns query builder instance in unbuffered streaming mode
 	 */
-	final public static function noBuffer()
+	final public static function stream()
 	{
 		$instance = new static;
-		$instance->setTable();
+		$instance = $instance->Query('stream')->stream();
 
-		return $instance->Query()->noBuffer();
+		if (isset(static::$table)) {
+			$instance->setTable(static::$table);
+		}
+
+		return $instance;
 	}
 
 	/**
@@ -301,7 +335,7 @@ class Model
 	 * Limitations:
 	 *   - One async query at a time per connection
 	 *   - Must await() before starting another async query
-	 *   - Cannot be combined with noBuffer()
+	 *   - Cannot be combined with stream()
 	 *
 	 * Examples:
 	 *   // Fire query, do other work, then get result
@@ -319,9 +353,104 @@ class Model
 	final public static function async()
 	{
 		$instance = new static;
-		$instance->setTable();
+		$instance = $instance->Query('async')->async();
 
-		return $instance->Query()->async();
+		if (isset(static::$table)) {
+			$instance->setTable(static::$table);
+		}
+
+		return $instance;
+	}
+
+	/**
+	 * Create a fresh database connection
+	 *
+	 * Returns a query builder instance with a new database connection that is not
+	 * cached. Each call to fresh() creates a completely new connection to the
+	 * database, allowing unlimited concurrent operations.
+	 *
+	 * Use for:
+	 *   - Running multiple async operations simultaneously
+	 *   - Parallel query execution
+	 *   - When you need more than 3 concurrent connections
+	 *
+	 * Do NOT use for:
+	 *   - Normal queries (use default connection)
+	 *   - When 3 connections (sync/async/stream) are sufficient
+	 *
+	 * Examples:
+	 *   // Multiple async operations in parallel
+	 *   $promise1 = QueueModel::fresh()->async()->where('status', 'pending')->all();
+	 *   $promise2 = LogModel::fresh()->async()->where('level', 'error')->all();
+	 *   $promise3 = StatsModel::fresh()->async()->select(['COUNT(*) as total'])->first();
+	 *
+	 *   // Wait for all to complete
+	 *   $queue = $promise1->await();
+	 *   $logs = $promise2->await();
+	 *   $stats = $promise3->await();
+	 *
+	 * @return static Returns query builder instance with fresh connection
+	 */
+	final public static function fresh()
+	{
+		$instance = new static;
+		$instance = $instance->Query('fresh');
+
+		if (isset(static::$table)) {
+			$instance->setTable(static::$table);
+		}
+
+		return $instance;
+	}
+
+	/**
+	 * Quote and escape value for SQL
+	 *
+	 * Escapes value using mysqli_real_escape_string() and wraps in quotes.
+	 * Safe for use in SQL file generation (exports, migrations).
+	 * Uses existing 'sync' connection (safe to call in loops).
+	 *
+	 * Examples:
+	 *   $quoted = Model::quote("hello'world");
+	 *   // Returns: 'hello\'world'
+	 *
+	 *   $sql = "INSERT INTO users (name) VALUES (" . Model::quote($name) . ")";
+	 *
+	 * Note: For executing queries, use Model::sql() with parameter binding instead.
+	 *
+	 * @param mixed $value Value to quote (string, int, null, bool, array)
+	 * @return string Quoted and escaped value
+	 */
+	final public static function quote($value)
+	{
+		$instance = new static;
+		$query = $instance->Query('sync');
+
+		return $query->quote($value);
+	}
+
+	/**
+	 * Get server-level database connection (no database selected)
+	 *
+	 * Returns query builder connected to MySQL server without selecting a database.
+	 * Used for database-level operations: CREATE DATABASE, DROP DATABASE, SHOW DATABASES.
+	 *
+	 * Examples:
+	 *   // Create database
+	 *   Model::server()->sql("CREATE DATABASE myapp");
+	 *
+	 *   // List databases
+	 *   $result = Model::server()->sql("SHOW DATABASES");
+	 *
+	 *   // Drop database
+	 *   Model::server()->sql("DROP DATABASE test_db");
+	 *
+	 * @return object Query builder instance with server-level connection
+	 */
+	final public static function server()
+	{
+		$instance = new static;
+		return $instance->Query('server');
 	}
 
 	/**
@@ -381,7 +510,7 @@ class Model
 	 * @param int $page Page number for pagination (default: 1)
 	 * @return $this Returns this instance for chaining
 	 */
-	final public function limit($limit, $page = 1)
+	final public static function limit($limit, $page = 1)
 	{
 		$instance = new static;
 		$instance->setTable();
@@ -404,7 +533,7 @@ class Model
 	 *
 	 * @return $this Returns this instance for chaining
 	 */
-	final public function unique()
+	final public static function unique()
 	{
 		$instance = new static;
 		$instance->setTable();
@@ -527,8 +656,8 @@ class Model
 	 *
 	 * Timestamps:
 	 *   If $timestamps is true in the model, automatically sets:
-	 *   - date_created on insert
-	 *   - date_modified on update
+	 *   - created_at on insert
+	 *   - updated_at on update
 	 *
 	 * @param array $data Single record (associative) or multiple records (array of arrays)
 	 * @param string|null $key Column name for bulk update (e.g., 'id'). When provided,
@@ -540,8 +669,9 @@ class Model
 		$instance = new static;
 		$instance->setTable();
 
-		return $instance->Query()->save($data, $key, static::$timestamps);
+		return $instance->Query()->save($data, $key);
 	}
+
 
 
 	/**
@@ -584,7 +714,7 @@ class Model
 		$instance->setTable();
 
 		// Execute insert with IGNORE (auto-detects single vs bulk)
-		return $instance->Query()->saveIgnore($data, static::$timestamps);
+		return $instance->Query()->saveIgnore($data);
 	}
 
 	/**
@@ -635,7 +765,7 @@ class Model
 		$instance = new static;
 		$instance->setTable();
 
-		return $instance->Query()->saveUpdate($data, $fields, static::$timestamps);
+		return $instance->Query()->saveUpdate($data, $fields);
 	}
 
 	/**
@@ -659,8 +789,8 @@ class Model
 	{
 		$instance = new static;
 		$instance->setTable();
-		
-		return $instance->Query()->saveById($data, static::$timestamps);
+
+		return $instance->Query()->saveById($data);
 	}
 
 	// =========================================================================
@@ -684,15 +814,21 @@ class Model
 	 *
 	 * WARNING: Without WHERE clause, deletes ALL records!
 	 *
+	 * @param $id int The id of the record to delete
 	 * @return MySQLResponse Response object with affected rows count
 	 */
-	final public static function delete()
+	final public static function delete($id = null)
 	{
 		$instance = new static;
 		$instance->setTable();
 
-		// Execute delete
-		return $instance->Query()->delete();
+		if($id !== null ) {
+			return $instance->Query()->where(array('id = ?', $id))->delete();
+		}
+		else  {
+			// Execute delete
+			return $instance->Query()->delete();
+		}
 	}
 
 	/**
@@ -811,70 +947,101 @@ class Model
 	// =========================================================================
 
 	/**
-	 * Get records by ID
+	 * Get single record by ID
 	 *
-	 * Convenience method to fetch records matching an ID.
+	 * Convenience method to fetch a single record by its primary key ID.
+	 * Returns the record as an associative array or null if not found.
 	 *
 	 * Examples:
 	 *   $post = Posts::getById(123);
+	 *   if ($post) {
+	 *       echo $post['title'];
+	 *   }
+	 *
 	 *   $user = Users::getById($userId);
+	 *   echo $user['name'] ?? 'User not found';
 	 *
-	 * Note: Returns array of results (use first() for single object)
-	 *
-	 * @param int $id ID to search for
-	 * @return array Array of matching records
+	 * @param int $id Primary key ID to search for
+	 * @return array|null Single record as associative array, or null if not found
 	 */
 	final public static function getById($id)
 	{
-		// Build WHERE clause for ID
+		// Build WHERE clause for ID and return first match
 		$instance = new static;
 		$instance->setTable();
-		
-		return $instance->Query()->where(array('id = ?', $id))->all();
+
+		return $instance->Query()->where(array('id = ?', $id))->first();
+	}
+
+	/**
+	 * Get single record by ID
+	 *
+	 * Convenience method to fetch a single record by its primary key ID.
+	 * Returns the record as an associative array or null if not found.
+	 *
+	 * Examples:
+	 *   $post = Posts::find(123);
+	 *   if ($post) {
+	 *       echo $post['title'];
+	 *   }
+	 *
+	 *   $user = Users::find($userId);
+	 *   echo $user['name'] ?? 'User not found';
+	 *
+	 * @param int $id Primary key ID to search for
+	 * @return array|null Single record as associative array, or null if not found
+	 */
+	final public static function find($id)
+	{
+		// Build WHERE clause for ID and return first match
+		$instance = new static;
+		$instance->setTable();
+
+		return $instance->Query()->where(['id = ?', $id])->first();
 	}
 
 	/**
 	 * Get records by creation date
 	 *
 	 * Retrieves records created on a specific date.
-	 * Requires date_created column.
+	 * Requires created_at column.
 	 *
 	 * Examples:
-	 *   $posts = Posts::getByDateCreated('2024-01-15');
-	 *   $orders = Orders::getByDateCreated(Date::now('Y-m-d'));
+	 *   $posts = Posts::getByCreatedAt('2024-01-15');
+	 *   $orders = Orders::getByCreatedAt(Date::now('Y-m-d'));
 	 *
-	 * @param string $dateCreated Date string (Y-m-d format)
+	 * @param string $createdAt Date string (Y-m-d format)
 	 * @return array Array of matching records
 	 */
-	final public static function getByDateCreated($dateCreated)
+	final public static function getByCreatedAt($createdAt)
 	{
-		// Build WHERE clause for date_created
+		// Build WHERE clause for created_at
 		$instance = new static;
 		$instance->setTable();
-		
-		return $instance->Query()->where(array('date_created = ?', $dateCreated))->all();
+
+		return $instance->Query()->where(array('created_at = ?', $createdAt))->all();
 	}
 
 	/**
 	 * Get records by modification date
 	 *
 	 * Retrieves records modified on a specific date.
-	 * Requires date_modified column.
+	 * Requires updated_at column.
 	 *
 	 * Examples:
-	 *   $posts = Posts::getByDateModified('2024-01-15');
-	 *   $updated = Products::getByDateModified(Date::now('Y-m-d'));
+	 *   $posts = Posts::getByUpdatedAt('2024-01-15');
+	 *   $updated = Products::getByUpdatedAt(Date::now('Y-m-d'));
 	 *
-	 * @param string $dateModified Date string (Y-m-d format)
+	 * @param string $updatedAt Date string (Y-m-d format)
 	 * @return array Array of matching records
 	 */
-	final public static function getByDateModified($dateModified)
+	final public static function getByUpdatedAt($updatedAt)
 	{
-		// Build WHERE clause for date_modified
+		// Build WHERE clause for updated_at
 		$instance = new static;
 		$instance->setTable();
 
-		return $instance->Query()->where(array('date_modified = ?', $dateModified))->all();
+		return $instance->Query()->where(array('updated_at = ?', $updatedAt))->all();
 	}
 
 	// =========================================================================
@@ -886,7 +1053,7 @@ class Model
 	 *
 	 * Executes a raw SQL query directly on the database.
 	 * Supports optional parameter binding for safe value injection.
-	 * Chain with noBuffer() for memory-efficient large result sets.
+	 * Chain with stream() for memory-efficient large result sets.
 	 *
 	 * Parameter Binding:
 	 *   Use ? as placeholders, pass values as additional arguments.
@@ -901,7 +1068,7 @@ class Model
 	 *   → SELECT * FROM users WHERE age > 18 AND status = 'active'
 	 *
 	 *   // Unbuffered for large result sets
-	 *   Posts::noBuffer()->sql('SELECT * FROM large_table')
+	 *   Posts::stream()->sql('SELECT * FROM large_table')
 	 *
 	 * @param string $query SQL query (with ? placeholders if binding)
 	 * @param mixed ...$params Values to bind to placeholders
@@ -1323,8 +1490,11 @@ class Model
 	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
 	 * @return object Query instance (chainable)
 	 */
-	final public function updateLock($mode = null)
+	final public static function updateLock($mode = null)
 	{
+		$instance = new static;
+		$instance->setTable();
+
 		return $this->Query()->updateLock($mode);
 	}
 
@@ -1344,8 +1514,11 @@ class Model
 	 * @param string|null $mode Lock mode: null (wait), 'skip', or 'nowait'
 	 * @return object Query instance (chainable)
 	 */
-	final public function shareLock($mode = null)
+	final public static function shareLock($mode = null)
 	{
+		$instance = new static;
+		$instance->setTable();
+
 		return $this->Query()->shareLock($mode);
 	}
 
