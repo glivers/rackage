@@ -663,33 +663,79 @@ class DOM
 		$doc = clone $this->document;
 		$xpath = new \DOMXPath($doc);
 
-		// Remove non-content elements
-		$nodesToRemove = $xpath->query('//script | //style | //nav | //header | //footer | //aside | //noscript');
-		foreach ($nodesToRemove as $node) {
-			$node->parentNode->removeChild($node);
+		// Always remove scripts/styles first (they're never content)
+		$alwaysRemove = $xpath->query('//script | //style | //noscript');
+		foreach ($alwaysRemove as $node) {
+			if ($node->parentNode) {
+				$node->parentNode->removeChild($node);
+			}
 		}
 
-		// Remove skip links and screen reader elements
-		$skipLinks = $xpath->query(
-			'//*[contains(@class, "skip")] | ' .
-			'//*[contains(@class, "sr-only")] | ' .
-			'//*[contains(@class, "screen-reader")] | ' .
-			'//*[contains(@class, "visually-hidden")] | ' .
-			'//a[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "skip to")]'
-		);
-		foreach ($skipLinks as $node) {
-			$node->parentNode->removeChild($node);
-		}
+		// Try to find main content container first (cleanest signal)
+		$mainContent = $xpath->query(
+			'//main | //article | //*[@role="main"] | ' .
+			'//*[@id="content"] | //*[@id="main-content"] | //*[@id="main"] | ' .
+			'//*[@class="content"] | //*[@class="main-content"]'
+		)->item(0);
 
-		// NEW IMPLEMENTATION - Extract entire body text at once
-		// Get body element and extract all text
-		$body = $xpath->query('//body')->item(0);
-		if (!$body) {
-			return '';
-		}
+		if ($mainContent) {
+			// Found main content - use it directly
+			$text = $mainContent->textContent;
+		} else {
+			// Fallback: remove boilerplate from body
 
-		// Get all text content from body
-		$text = $body->textContent;
+			// Remove semantic nav elements
+			$nodesToRemove = $xpath->query('//nav | //header | //footer | //aside');
+			foreach ($nodesToRemove as $node) {
+				if ($node->parentNode) {
+					$node->parentNode->removeChild($node);
+				}
+			}
+
+			// Remove class/id-based navigation (word-boundary matching)
+			$boilerplate = $xpath->query(
+				'//*[contains(concat(" ", normalize-space(@class), " "), " nav ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " navbar ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " navigation ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " menu ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " sidebar ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " footer ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@class), " "), " header ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " nav ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " navbar ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " navigation ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " menu ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " sidebar ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " footer ")] | ' .
+				'//*[contains(concat(" ", normalize-space(@id), " "), " header ")]'
+			);
+			foreach ($boilerplate as $node) {
+				if ($node->parentNode) {
+					$node->parentNode->removeChild($node);
+				}
+			}
+
+			// Remove skip links and screen reader elements
+			$skipLinks = $xpath->query(
+				'//*[contains(@class, "skip")] | ' .
+				'//*[contains(@class, "sr-only")] | ' .
+				'//*[contains(@class, "screen-reader")] | ' .
+				'//*[contains(@class, "visually-hidden")] | ' .
+				'//a[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "skip to")]'
+			);
+			foreach ($skipLinks as $node) {
+				if ($node->parentNode) {
+					$node->parentNode->removeChild($node);
+				}
+			}
+
+			$body = $xpath->query('//body')->item(0);
+			if (!$body) {
+				return '';
+			}
+
+			$text = $body->textContent;
+		}
 
 		// Clean whitespace, preserve paragraph breaks
 		$text = preg_replace('/[^\S\n]+/u', ' ', $text);       // Non-newline whitespace → space
@@ -1270,21 +1316,53 @@ class DOM
 	 * Remove script and style tags from current selection
 	 *
 	 * Modifies the document by removing script and style elements.
+	 * Optionally preserves Schema.org JSON-LD scripts for structured data extraction.
 	 *
 	 * Examples:
 	 *   $dom->removeScripts()->filter('body')->text();
+	 *   $dom->removeScripts(true)->fullHtml(); // Keep JSON-LD
 	 *
+	 * @param bool $preserveJsonLd If true, keeps application/ld+json scripts
 	 * @return self Returns self for chaining
 	 */
-	public function removeScripts()
+	public function removeScripts($preserveJsonLd = false)
 	{
-		$nodesToRemove = $this->xpath->query('//script | //style');
+		// Remove all <style> tags
+		$styles = $this->xpath->query('//style');
+		foreach ($styles as $node) {
+			$node->parentNode->removeChild($node);
+		}
 
-		foreach ($nodesToRemove as $node) {
+		// Remove <script> tags (optionally preserve JSON-LD)
+		if ($preserveJsonLd) {
+			$scripts = $this->xpath->query('//script[not(@type="application/ld+json")]');
+		} else {
+			$scripts = $this->xpath->query('//script');
+		}
+
+		foreach ($scripts as $node) {
 			$node->parentNode->removeChild($node);
 		}
 
 		return $this;
+	}
+
+	/**
+	 * Export full document HTML
+	 *
+	 * Returns the complete HTML document as a string, including
+	 * DOCTYPE, html, head, and body tags.
+	 *
+	 * Useful after removeScripts() to get cleaned HTML for spam checking.
+	 *
+	 * Examples:
+	 *   $cleanHtml = $dom->removeScripts()->fullHtml();
+	 *
+	 * @return string Full HTML document
+	 */
+	public function fullHtml()
+	{
+		return $this->document->saveHTML();
 	}
 
 	/**
@@ -1612,6 +1690,27 @@ class DOM
 	{
 		// Basic link data
 		$anchorText = trim($link->textContent);
+		$anchorType = 'text';
+
+		// If no anchor text, check for image and use alt text
+		if (empty($anchorText)) {
+			$imgNodes = $this->xpath->query('.//img[@src]', $link);
+			if ($imgNodes->length > 0) {
+				$img = $imgNodes->item(0);
+				$altText = trim($img->getAttribute('alt'));
+				if (!empty($altText)) {
+					$anchorText = $altText;
+					$anchorType = 'image';
+				} else {
+					$anchorText = '[image]';
+					$anchorType = 'image';
+				}
+			} else {
+				// No text, no image - mark as empty
+				$anchorText = '[empty]';
+			}
+		}
+
 		$rel = $link->getAttribute('rel') ?: '';
 		$downloadAttr = $link->hasAttribute('download');
 		$typeAttr = $link->getAttribute('type') ?: '';
@@ -1641,6 +1740,7 @@ class DOM
 		return [
 			'url' => $absoluteUrl,
 			'anchor_text' => $anchorText,
+			'anchor_type' => $anchorType,
 			'position' => $position,
 
 			// Classification
@@ -1649,7 +1749,7 @@ class DOM
 			'rel' => $rel,
 
 			// Context
-			'context_type' => $contextType,
+			'placement' => $contextType,
 			'parent_tag' => $parentTag,
 			'surrounding_text' => $surroundingText,
 			'semantic_role' => $semanticRole,
@@ -1706,10 +1806,12 @@ class DOM
 	}
 
 	/**
-	 * Detect context type (navigation, content, metadata, footer)
+	 * Detect link placement (nav, content, metadata, footer, sidebar)
+	 *
+	 * Values match LinkModel enum: nav, content, footer, sidebar, metadata
 	 *
 	 * @param \DOMElement $link Link element
-	 * @return string Context type
+	 * @return string Placement type
 	 */
 	private function detectContextType($link)
 	{
@@ -1722,8 +1824,8 @@ class DOM
 			$tagName = strtolower($current->nodeName);
 
 			// Semantic HTML5 tags
-			if ($tagName === 'nav') return 'navigation';
-			if ($tagName === 'header') return 'navigation';
+			if ($tagName === 'nav') return 'nav';
+			if ($tagName === 'header') return 'nav';
 			if ($tagName === 'footer') return 'footer';
 			if ($tagName === 'aside') return 'sidebar';
 
@@ -1738,8 +1840,13 @@ class DOM
 				$id = $current->getAttribute('id');
 
 				// Navigation indicators
-				if (preg_match('/\b(nav|menu|header|sidebar)\b/i', $class . ' ' . $id)) {
-					return 'navigation';
+				if (preg_match('/\b(nav|navbar|navigation|menu|topbar|breadcrumb|pagination)\b/i', $class . ' ' . $id)) {
+					return 'nav';
+				}
+
+				// Sidebar indicators
+				if (preg_match('/\b(sidebar|widget|aside)\b/i', $class . ' ' . $id)) {
+					return 'sidebar';
 				}
 
 				// Footer indicators
@@ -1748,7 +1855,7 @@ class DOM
 				}
 
 				// Author/metadata indicators
-				if (preg_match('/\b(author|byline|meta|info)\b/i', $class . ' ' . $id)) {
+				if (preg_match('/\b(author|byline|meta|social|share)\b/i', $class . ' ' . $id)) {
 					return 'metadata';
 				}
 			}
