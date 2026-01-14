@@ -55,6 +55,7 @@
 
 use Rackage\Path;
 use Rackage\Cache;
+use Rackage\Request;
 use Rackage\Registry;
 use Rackage\Templates\Template;
 use Rackage\Templates\TemplateStream;
@@ -224,11 +225,9 @@ class View {
         $errorPages = Registry::settings()['error_pages'] ?? [];
         $errorView = $errorPages[$code] ?? null;
 
-        if ($errorView) {
-            self::render($errorView, $data);
-        } else {
-            echo "<h1>Error $code</h1>";
-        }
+        if ($errorView) self::render($errorView, $data);
+   
+        else echo "<h1>Error $code</h1>";
     }
 
     /**
@@ -269,10 +268,12 @@ class View {
             $allVariables = array_merge(self::$variables, $data);
 
             // Extract variables into local scope
-            foreach ($allVariables as $key => $value) {
+            // foreach ($allVariables as $key => $value) {
                 
-                $$key = $value;
-            }
+            //     $$key = $value;
+            // }
+
+            extract($allVariables);
 
             // Determine whether to parse template
             $shouldParse = $parse && (Registry::settings()['template_engine'] !== false);
@@ -418,6 +419,55 @@ class View {
         echo json_encode($data);
     }
 
+    /**
+     * Render output and halt execution
+     *
+     * Renders view/JSON/error page and immediately exits.
+     * Useful in filters to stop execution while returning output to user.
+     *
+     * Type-based dispatch:
+     *   - Array → JSON response
+     *   - Int → Error page (from error_pages config)
+     *   - String → Template render
+     *
+     * Examples:
+     *   View::halt(404);                                       // Error 404
+     *   View::halt(404, null, ['message' => 'Not found']);    // Error 404 with data
+     *   View::halt('errors/rate-limit', 429);                  // Template with 429 status
+     *   View::halt('errors/rate-limit', 429, $data);           // Template with status and data
+     *   View::halt(['error' => 'Unauthorized'], 401);          // JSON with 401 status
+     *
+     * WARNING: Calls exit() - no code after this runs (including @after filters)
+     *
+     * @param array|int|string $mode What to render (array=JSON, int=error, string=template)
+     * @param int|null $code HTTP status code (default: 200 for string/array, mode value for int)
+     * @param array $data Data to pass to template
+     * @return void (never returns - calls exit)
+     */
+    public static function halt($mode, $code = null, $data = [])
+    {
+        // Array → JSON response
+        if (is_array($mode)) {
+            self::json($mode, $code ?? 200);
+            exit;
+        }
+
+        // Int → error page
+        if (is_int($mode)) {
+            self::error($mode, $data);
+            exit;
+        }
+
+        // String → template render
+        if (is_string($mode)) {
+            self::render($mode, $data, $code ?? 200);
+            exit;
+        }
+
+        // Fallback - just exit
+        exit;
+    }
+
     // ===========================================================================
     // CACHE HANDLING
     // ===========================================================================
@@ -445,7 +495,7 @@ class View {
     private static function storeCache($output)
     {
         $cacheConfig = Registry::cache();
-        $requestUri = Registry::url();
+        $requestUri = Request::fullUri();
         $cacheKey = 'page:' . md5($requestUri);
         $lifetime = $cacheConfig['lifetime'] / 60;
 
