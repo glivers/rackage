@@ -31,6 +31,7 @@
 
 use Rackage\Registry;
 use Rackage\Cache;
+use Rackage\Request;
 use Rackage\Utilities\UrlParser;
 use Rackage\Utilities\Inspector;
 use ReflectionClass;
@@ -168,7 +169,7 @@ class Router {
 		}
 
 		// Check URL exclusions
-		$requestUri = Registry::url();
+		$requestUri = Request::fullUri();
 		foreach ($cacheConfig['exclude_urls'] as $pattern)
 		{
 			if ($this->urlMatches($requestUri, $pattern))
