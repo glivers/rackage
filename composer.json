@@ -10,8 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=7.4",
-        "glivers/rachie": "3.*"
+        "php": ">=8.0.0"
     },   
     "autoload": {
         "psr-4": { 
