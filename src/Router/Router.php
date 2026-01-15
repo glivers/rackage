@@ -380,8 +380,8 @@ class Router {
 			    Registry::settings()['routing']['catch_all'] === true) {
 
 				// Use catch-all controller instead of throwing error
-				$this->controller = Registry::settings()['routing']['ca_controller'];
-				$this->action = Registry::settings()['routing']['ca_method'];
+				$this->controller = Registry::settings()['routing']['controller'];
+				$this->action = Registry::settings()['routing']['method'];
 
 				// Pass full URL as first parameter to catch-all method
 				$this->parameters = array(Registry::url());
