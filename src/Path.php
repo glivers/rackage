@@ -129,6 +129,10 @@ class Path {
 	 * setting from configuration. The separator is used to split the
 	 * view name into directory segments.
 	 *
+	 * Custom View Paths:
+	 *   If view_paths is configured in settings.php, checks those directories
+	 *   first before falling back to application/views/.
+	 *
 	 * Separator is read from: settings.php → url_separator
 	 *
 	 * Examples:
@@ -137,9 +141,9 @@ class Path {
 	 *   Path::view('errors/404')    → /path/to/application/views/errors/404.php
 	 *   Path::view('home')          → /path/to/application/views/home.php
 	 *
-	 *   // With url_separator = '.'
-	 *   Path::view('blog.show')     → /path/to/application/views/blog/show.php
-	 *   Path::view('errors.404')    → /path/to/application/views/errors/404.php
+	 *   // With view_paths = ['themes/']
+	 *   Path::view('aurora/home')   → /path/to/themes/aurora/home.php (if exists)
+	 *                               → /path/to/application/views/aurora/home.php (fallback)
 	 *
 	 * @param string $fileName View name using configured separator
 	 * @return string Absolute path to view file
@@ -149,14 +153,55 @@ class Path {
 		// Get separator from settings (defaults to '/' if not set)
 		$separator = Registry::settings()['url_separator'] ?? '/';
 
-		// Split view name by separator
-		$array = explode($separator, $fileName);
+		// Split view name by separator and filter out empty elements
+		$array = array_filter(explode($separator, $fileName), 'strlen');
 
-		// Build absolute path
+		// Build relative path (guaranteed no leading/trailing slashes)
+		$relativePath = join(DIRECTORY_SEPARATOR, $array) . '.php';
+
+		// Check custom view paths first
+		$customPaths = Registry::settings()['view_paths'] ?? [];
+
+		if (!empty($customPaths)) {
+			// Clean array once: remove application/views and exact duplicates
+			$cleaned = [];
+			$seen = [];
+
+			foreach ($customPaths as $path) {
+				$trimmed = trim($path, '/\\');
+				$normalized = str_replace('\\', '/', $trimmed);
+
+				// Skip application/views (case-insensitive check)
+				if (strtolower($normalized) === 'application/views') {
+					continue;
+				}
+
+				// Skip exact duplicates (case-sensitive for Linux compatibility)
+				if (isset($seen[$normalized])) {
+					continue;
+				}
+
+				$seen[$normalized] = true;
+				$cleaned[] = $trimmed;
+			}
+
+			// Iterate through cleaned paths
+			foreach ($cleaned as $basePath) {
+				$fullPath = Registry::settings()['root'] . DIRECTORY_SEPARATOR
+						  . $basePath . DIRECTORY_SEPARATOR
+						  . $relativePath;
+
+				if (file_exists($fullPath)) {
+					return $fullPath;
+				}
+			}
+		}
+
+		// Fallback to default application/views/ directory
 		return Registry::settings()['root'] . DIRECTORY_SEPARATOR
 			. 'application' . DIRECTORY_SEPARATOR
 			. 'views' . DIRECTORY_SEPARATOR
-			. join(DIRECTORY_SEPARATOR, $array) . '.php';
+			. $relativePath;
 	}
 
 }
