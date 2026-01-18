@@ -80,8 +80,8 @@
  * @version 2.0.3
  */
 
-use Rackage\Uploader\Uploader;
-use Rackage\Uploader\UploaderResponse;
+use Rackage\Upload\Uploader;
+use Rackage\Upload\UploaderResponse;
 
 class Upload {
 
@@ -251,7 +251,7 @@ class Upload {
      *   }
      *
      * @return UploaderResponse Upload result with file details or error
-     * @throws \Rackage\Uploader\UploaderException On system errors (directory issues)
+     * @throws \Rackage\Upload\UploaderException On system errors (directory issues)
      */
     public static function save()
     {
