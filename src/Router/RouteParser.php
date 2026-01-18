@@ -27,9 +27,9 @@
  *   Result: UserController->show($id='123', $action='edit')
  *
  * Architecture:
- *   This class works with UrlParser which handles initial URL parsing.
- *   RouteParser adds the routing layer on top, mapping friendly route names
- *   to actual controllers and extracting named parameters.
+ *   This class handles both URL parsing and route matching.
+ *   It parses the URL string into components, then matches against defined routes
+ *   to determine the controller, method, and parameters.
  *
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
@@ -40,9 +40,9 @@
  * @version 2.0.1
  */
 
-use Rackage\Utilities\UrlParser;
 use Rackage\Routes\RouteException;
 use Rackage\Arr;
+use Rackage\Str;
 use Rackage\Input;
 
 class RouteParser {
@@ -98,21 +98,23 @@ class RouteParser {
 
 	/**
 	 * Current URL string being parsed
+	 * Example: "admin/posts/edit/5"
 	 * @var string
 	 */
-	private $url;
+	private $urlString;
+
+	/**
+	 * URL components array after splitting and cleaning
+	 * Example: "admin/posts/edit/5" → ["admin", "posts", "edit", "5"]
+	 * @var array
+	 */
+	private $urlComponents = [];
 
 	/**
 	 * Defined routes from routes.php
 	 * @var array
 	 */
 	protected $routes = array();
-
-	/**
-	 * URL parser instance
-	 * @var UrlParser
-	 */
-	protected $urlParser;
 
 	/**
 	 * Matched route name
@@ -133,17 +135,31 @@ class RouteParser {
 	protected $wildcardValue = null;
 
 	/**
-	 * Constructor - Initialize route parser with dependencies
+	 * Number of URL segments to skip when extracting method/parameters
+	 * Default: 1 (controller is segment [0], method is segment [1])
+	 * Compound routes: 2 (route consumes [0] and [1], method is segment [2])
+	 * @var int
+	 */
+	protected $segmentOffset = 1;
+
+	/**
+	 * Constructor - Initialize route parser and parse URL
 	 *
 	 * @param string $url The URL request string to parse
 	 * @param array $routes Defined routes array
-	 * @param UrlParser $urlParser URL parser instance
 	 */
-	public function __construct($url, array $routes, UrlParser $urlParser)
+	public function __construct($url, array $routes)
 	{
-		$this->url = $url;
+		$this->urlString = $url;
 		$this->routes = $routes;
-		$this->urlParser = $urlParser;
+
+		// Sanitize URL and split into components
+		// Example: "admin/posts/edit/5" → ["admin", "posts", "edit", "5"]
+		$cleanUrl = Str::removeTags($url);
+		$this->urlComponents = Arr::parts($this->separator, $cleanUrl)
+			->clean()
+			->trim()
+			->get();
 	}
 
 	// ===========================================================================
@@ -170,86 +186,101 @@ class RouteParser {
 	 */
 	public function matchRoute()
 	{
-		// URL must have at least a controller segment
-		if ($this->urlParser->getController() === null) {
+		// URL must have at least one segment
+		if (empty($this->urlComponents)) {
 			return false;
 		}
 
-		// Check if first URL segment matches a defined route name
-		$controllerSegment = $this->urlParser->getController();
-		$routeMatch = Arr::exists($controllerSegment, $this->routes);
+		$controllerSegment = $this->urlComponents[0];
 
-		if ($routeMatch) {
-			// Store matched route for later reference
-			$this->route = $controllerSegment;
+		// ============================================================================
+		// COMPOUND ROUTE MATCHING (2-segment routes)
+		// ============================================================================
+		// Priority order: exact compound → compound wildcard → exact single → single wildcard
+		//
+		// Example: URL '/admin/posts/edit/5' checks in order:
+		//   1. 'admin/posts' (exact) → AdminpostsController::edit(5)
+		//   2. 'admin/posts/*' (wildcard) → if defined
+		//   3. 'admin' (exact) → AdminController::posts()
+		//   4. 'admin/*' (wildcard) → AdminController::catchAll('posts/edit/5')
+		//
+		// Performance: 4 hash lookups (~200ns total). Extremely fast.
 
-			// Store route metadata (e.g., "User@show/id/action")
-			$this->routeData = $this->routes[$controllerSegment];
+		if (isset($this->urlComponents[1])) {
+			$methodSegment = $this->urlComponents[1];
 
-			return true;
-		}
+			// 1. Check exact compound route: 'admin/posts'
+			$compoundKey = $controllerSegment . '/' . $methodSegment;
+			if (isset($this->routes[$compoundKey])) {
+				$this->route = $compoundKey;
+				$this->routeData = $this->routes[$compoundKey];
+				$this->segmentOffset = 2;
+				return true;
+			}
 
-		// No exact match - try pattern matching (wildcard routes)
-		return $this->matchPatternRoute();
-	}
+			// 2. Check compound wildcard route: 'admin/posts/*'
+			$compoundWildcard = $compoundKey . '/*';
+			if (isset($this->routes[$compoundWildcard])) {
+				// Capture everything after 'admin/posts/' as wildcard
+				// URL: /admin/posts/edit/5 → wildcard = 'edit/5'
+				$prefixLength = strlen($controllerSegment) + strlen($methodSegment) + 2; // +2 for two slashes
+				$this->wildcardValue = substr($this->urlString, $prefixLength);
 
-	/**
-	 * Check if URL matches a pattern route (wildcard matching)
-	 *
-	 * Checks routes ending with /* for wildcard pattern matching.
-	 * Wildcard captures everything after the prefix and passes it as a parameter.
-	 *
-	 * Process:
-	 * 1. Loop through all routes
-	 * 2. Find routes ending with /*
-	 * 3. Extract prefix (part before /*)
-	 * 4. Check if URL starts with prefix/
-	 * 5. If match, capture everything after prefix/ as wildcard value
-	 *
-	 * Example:
-	 *   Route: 'blog/*' => 'Blog@show/slug'
-	 *   URL: /blog/my-awesome-post
-	 *   Prefix: 'blog'
-	 *   Wildcard: 'my-awesome-post'
-	 *   Result: BlogController::show($slug='my-awesome-post')
-	 *
-	 * @return bool True if pattern matched, false otherwise
-	 */
-	protected function matchPatternRoute()
-	{
-		// Loop through all routes looking for wildcard patterns
-		foreach ($this->routes as $routeKey => $routeValue) {
-
-			// Check if route ends with /*
-			if (substr($routeKey, -2) === '/*') {
-
-				// Extract prefix (remove the /*)
-				$prefix = substr($routeKey, 0, -2);
-
-				// Check if URL starts with prefix/
-				// Using strpos for exact prefix match at start of string
-				if (strpos($this->url, $prefix . '/') === 0) {
-
-					// Capture everything after prefix/ as wildcard value
-					$this->wildcardValue = substr($this->url, strlen($prefix) + 1);
-
-					// Store matched route info
-					$this->route = $routeKey;
-					$this->routeData = $routeValue;
-					$this->isPatternMatch = true;
-
-					return true;
-				}
+				$this->route = $compoundWildcard;
+				$this->routeData = $this->routes[$compoundWildcard];
+				$this->isPatternMatch = true;
+				$this->segmentOffset = 2;
+				return true;
 			}
 		}
 
-		// No pattern matched
+		// ============================================================================
+		// SINGLE-SEGMENT ROUTE MATCHING
+		// ============================================================================
+
+		// 3. Check exact single route: 'admin'
+		if (isset($this->routes[$controllerSegment])) {
+			$this->route = $controllerSegment;
+			$this->routeData = $this->routes[$controllerSegment];
+			return true;
+		}
+
+		// 4. Check single wildcard route: 'admin/*'
+		$singleWildcard = $controllerSegment . '/*';
+		if (isset($this->routes[$singleWildcard])) {
+			// Capture everything after 'admin/' as wildcard
+			// URL: /admin/posts/edit → wildcard = 'posts/edit'
+			$prefixLength = strlen($controllerSegment) + 1; // +1 for slash
+			$this->wildcardValue = substr($this->urlString, $prefixLength);
+
+			$this->route = $singleWildcard;
+			$this->routeData = $this->routes[$singleWildcard];
+			$this->isPatternMatch = true;
+			return true;
+		}
+
+		// No route matched
 		return false;
 	}
+
 
 	// ===========================================================================
 	// CONTROLLER RESOLUTION
 	// ===========================================================================
+
+	/**
+	 * Set controller from URL when no route matched
+	 *
+	 * Extracts controller from first URL component for automatic routing.
+	 * Example: URL "/Blog/show/123" → controller = "Blog"
+	 *
+	 * @return RouteParser
+	 */
+	public function setControllerUrl()
+	{
+		$this->controller = $this->urlComponents[0] ?? null;
+		return $this;
+	}
 
 	/**
 	 * Set controller from route metadata
@@ -307,6 +338,20 @@ class RouteParser {
 	// ===========================================================================
 
 	/**
+	 * Set method from URL when no route matched
+	 *
+	 * Extracts method from second URL component for automatic routing.
+	 * Example: URL "/Blog/show/123" → method = "show"
+	 *
+	 * @return RouteParser
+	 */
+	public function setMethodUrl()
+	{
+		$this->method = $this->urlComponents[1] ?? null;
+		return $this;
+	}
+
+	/**
 	 * Set method from route metadata or URL
 	 *
 	 * Handles two scenarios:
@@ -317,7 +362,7 @@ class RouteParser {
 	 * - If no method metadata:
 	 *   1. Check if controller has embedded parameters (e.g., "user/id")
 	 *   2. Extract controller and parameter names if present
-	 *   3. Fall back to URL parser for method name
+	 *   3. Extract method from URL at segmentOffset position
 	 *
 	 * - If method metadata exists:
 	 *   1. Parse metadata string (e.g., "show/id/action" -> ['show', 'id', 'action'])
@@ -329,13 +374,20 @@ class RouteParser {
 	 *   → method='show', methodArray=['show', 'id', 'action']
 	 *
 	 *   Route: 'api' => 'Api', URL: /api/users/list
-	 *   → method='users' (from URL)
+	 *   → method='users' (from URL at offset 1)
 	 *
+	 *   Route: 'admin/posts' => 'adminposts', URL: /admin/posts/edit/5
+	 *   → method='edit' (from URL at offset 2)
+	 *
+	 * @param int $offset Number of URL segments to skip (default: uses $this->segmentOffset)
 	 * @return RouteParser
 	 * @throws RouteException If method format is invalid
 	 */
-	public function setMethod()
+	public function setMethod($offset = null)
 	{
+		// Use provided offset or fall back to instance offset
+		$offset = $offset ?? $this->segmentOffset;
+
 		// Case 1: No method metadata - extract from URL
 		if ($this->methodData === null) {
 
@@ -352,8 +404,8 @@ class RouteParser {
 				$this->methodArray = $keys;
 			}
 
-			// Get method from URL parser (e.g., /controller/method)
-			$this->method = $this->urlParser->getMethod();
+			// Extract method from URL at the specified offset
+			$this->method = $this->urlComponents[$offset] ?? null;
 
 			return $this;
 		}
@@ -380,9 +432,9 @@ class RouteParser {
 
 		// Handle edge case: URL has a method segment when route already defines method
 		// Example: Route 'user'=>'User@show', URL '/user/edit' - 'edit' becomes a parameter
-		if ($this->urlParser->getMethod() !== null) {
-			// Prepend URL method as first parameter value
-			$this->urlParser->setParameters($this->urlParser->getMethod(), false);
+		if (isset($this->urlComponents[1])) {
+			// Prepend URL method segment as first parameter value
+			array_unshift($this->urlComponents, $this->urlComponents[1]);
 		}
 
 		return $this;
@@ -422,17 +474,27 @@ class RouteParser {
 	 *   URL values: ['123', 'edit']
 	 *   Result: ['id' => '123', 'action' => 'edit']
 	 *
+	 *   Route: 'admin/posts' => 'adminposts'
+	 *   URL: /admin/posts/edit/5
+	 *   Offset: 2, params start at [3]
+	 *   Result: ['5']
+	 *
 	 * Why inject into Input:
 	 *   Controllers can access params both as method arguments AND via Input::get()
 	 *   - Method args: public function show($id, $action) { }
 	 *   - Input class: $id = Input::get('id') or Input::url('id')
 	 *
+	 * @param int $offset Number of URL segments to skip (default: uses $this->segmentOffset)
 	 * @return RouteParser
 	 */
-	public function setParameters()
+	public function setParameters($offset = null)
 	{
-		// Get parameter values from URL (e.g., ['123', 'edit'])
-		$values = $this->urlParser->getParameters();
+		// Use provided offset or fall back to instance offset
+		$offset = $offset ?? $this->segmentOffset;
+
+		// Get parameter values from URL starting at offset + 1
+		// Example: /admin/posts/edit/5 with offset=2 → params from [3]: ['5']
+		$values = array_slice($this->urlComponents, $offset + 1);
 
 		// If this is a pattern match, prepend the wildcard value as first parameter
 		// Example: Route 'blog/*', URL '/blog/my-post' → wildcard='my-post'
