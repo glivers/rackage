@@ -1,4 +1,4 @@
-<?php namespace Rackage\Uploader;
+<?php namespace Rackage\Upload;
 
 /**
  * File Uploader Implementation
@@ -30,7 +30,7 @@
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2050 Geoffrey Okongo
  * @category Rackage
- * @package Rackage\Uploader
+ * @package Rackage\Upload
  * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.3
@@ -39,8 +39,8 @@
 use Rackage\Path;
 use Rackage\Registry;
 use Rackage\Url;
-use Rackage\Uploader\UploaderException;
-use Rackage\Uploader\UploaderResponse;
+use Rackage\Upload\UploaderException;
+use Rackage\Upload\UploaderResponse;
 
 class Uploader {
 
