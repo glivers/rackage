@@ -114,7 +114,8 @@ class Model
 	protected static $connections = [
 		'sync' => null,
 		'async' => null,
-		'stream' => null
+		'stream' => null,
+		'server' => null
 	];
 
 	/**
