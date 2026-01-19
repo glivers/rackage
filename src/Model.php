@@ -158,11 +158,24 @@ class Model
 	 * Lazy-loads database connection and query builder for this model instance.
 	 * Each instance has its own query builder to prevent state pollution.
 	 *
-	 * @param string|null $mode Connection mode: 'sync', 'async', 'stream', 'fresh', or 'server'
+	 * @param string|null $mode Connection mode: 'sync', 'async', 'stream', 'fresh', 'server', or 'driver'
+	 * @param string|null $driver Driver/connection name from database.php (e.g., 'backup', 'analytics')
 	 * @return object Query builder instance
 	 */
-	protected function Query($mode = null)
+	protected function Query($mode = null, $driver = null)
 	{
+		// Custom driver connection (backup, analytics, etc.)
+		if ($driver !== null) {
+			if (!isset(static::$connections[$driver])) {
+				static::$connections[$driver] = Registry::get('database-driver', 'driver', $driver);
+			}
+			if ($this->queryObject === null) {
+				$this->queryObject = static::$connections[$driver]->query(static::$table, static::$timestamps);
+			}
+			return $this->queryObject;
+		}
+
+		// Default connection logic
 		$type = $mode ?? 'sync';
 
 		// Build full registry key
@@ -305,20 +318,33 @@ class Model
 	 *       fputcsv($file, $row);
 	 *   }
 	 *
+	 *   // Raw SQL with parameter binding (shorthand)
+	 *   $result = UserModel::stream("SELECT * FROM users WHERE created_at > ?", '2024-01-01');
+	 *   while ($row = $result->fetch_assoc()) {
+	 *       fputcsv($file, $row);
+	 *   }
+	 *
 	 * IMPORTANT:
 	 *   - Returns mysqli_result object, NOT array
 	 *   - Use fetch_assoc() in while loop to iterate
 	 *   - Cannot use result_array() (defeats the purpose)
 	 *
-	 * @return static Returns query builder instance in unbuffered streaming mode
+	 * @param string|null $query Optional raw SQL query to execute immediately in streaming mode
+	 * @param mixed ...$params Optional parameters for query binding (when $query provided)
+	 * @return static|mysqli_result Query builder (no params) or mysqli_result (with query)
 	 */
-	final public static function stream()
+	final public static function stream($query = null, ...$params)
 	{
 		$instance = new static;
 		$instance = $instance->Query('stream')->stream();
 
 		if (isset(static::$table)) {
 			$instance->setTable(static::$table);
+		}
+
+		// If query provided, execute immediately in streaming mode
+		if ($query !== null) {
+			return $instance->sql($query, ...$params);
 		}
 
 		return $instance;
@@ -334,8 +360,9 @@ class Model
 	 * Call await() on the Promise to get the actual result.
 	 *
 	 * Limitations:
-	 *   - One async query at a time per connection
-	 *   - Must await() before starting another async query
+	 *   - One async query at a time per pooled connection
+	 *   - Must await() before starting another async query on same connection
+	 *   - For parallel async queries, use fresh() to get new connections
 	 *   - Cannot be combined with stream()
 	 *
 	 * Examples:
@@ -349,15 +376,33 @@ class Model
 	 *       $pages = $promise->await();
 	 *   }
 	 *
-	 * @return static Returns query builder instance in async mode
+	 *   // Raw SQL with parameter binding (shorthand)
+	 *   $promise = PageModel::async("SELECT * FROM pages WHERE status = ?", 'pending');
+	 *   $processed = processLargeDataset($data);
+	 *   $pages = $promise->await();
+	 *
+	 *   // Parallel async queries require fresh connections
+	 *   $p1 = UserModel::fresh()->async()->sql("SELECT COUNT(*) FROM users");
+	 *   $p2 = OrderModel::fresh()->async()->sql("SELECT COUNT(*) FROM orders");
+	 *   $users = $p1->await();
+	 *   $orders = $p2->await();
+	 *
+	 * @param string|null $query Optional raw SQL query to execute immediately in async mode
+	 * @param mixed ...$params Optional parameters for query binding (when $query provided)
+	 * @return static|MySQLAsync Query builder (no params) or Promise (with query)
 	 */
-	final public static function async()
+	final public static function async($query = null, ...$params)
 	{
 		$instance = new static;
 		$instance = $instance->Query('async')->async();
 
 		if (isset(static::$table)) {
 			$instance->setTable(static::$table);
+		}
+
+		// If query provided, execute immediately in async mode
+		if ($query !== null) {
+			return $instance->sql($query, ...$params);
 		}
 
 		return $instance;
@@ -374,6 +419,7 @@ class Model
 	 *   - Running multiple async operations simultaneously
 	 *   - Parallel query execution
 	 *   - When you need more than 3 concurrent connections
+	 *   - Long-running workers that need connection isolation
 	 *
 	 * Do NOT use for:
 	 *   - Normal queries (use default connection)
@@ -390,15 +436,25 @@ class Model
 	 *   $logs = $promise2->await();
 	 *   $stats = $promise3->await();
 	 *
-	 * @return static Returns query builder instance with fresh connection
+	 *   // Raw SQL on fresh connection (blocking, shorthand)
+	 *   $result = QueueModel::fresh("SELECT * FROM queue WHERE status = ?", 'pending');
+	 *
+	 * @param string|null $query Optional raw SQL query to execute immediately on fresh connection
+	 * @param mixed ...$params Optional parameters for query binding (when $query provided)
+	 * @return static|mixed Query builder (no params) or query result (with query)
 	 */
-	final public static function fresh()
+	final public static function fresh($query = null, ...$params)
 	{
 		$instance = new static;
 		$instance = $instance->Query('fresh');
 
 		if (isset(static::$table)) {
 			$instance->setTable(static::$table);
+		}
+
+		// If query provided, execute immediately on fresh connection (blocking)
+		if ($query !== null) {
+			return $instance->sql($query, ...$params);
 		}
 
 		return $instance;
@@ -446,12 +502,77 @@ class Model
 	 *   // Drop database
 	 *   Model::server()->sql("DROP DATABASE test_db");
 	 *
-	 * @return object Query builder instance with server-level connection
+	 *   // Raw SQL shorthand (cleaner)
+	 *   Model::server("CREATE DATABASE myapp_test");
+	 *   $databases = Model::server("SHOW DATABASES");
+	 *   Model::server("DROP DATABASE myapp_test");
+	 *
+	 * @param string|null $query Optional raw SQL query to execute immediately at server level
+	 * @param mixed ...$params Optional parameters for query binding (when $query provided)
+	 * @return object|mixed Query builder (no params) or query result (with query)
 	 */
-	final public static function server()
+	final public static function server($query = null, ...$params)
 	{
 		$instance = new static;
+
+		if ($query !== null) {
+			return $instance->Query('server')->sql($query, ...$params);
+		}
+
 		return $instance->Query('server');
+	}
+
+	/**
+	 * Use alternative database connection
+	 *
+	 * Connects to a named database connection defined in database.php config.
+	 * Useful for connecting to backup databases, read replicas, analytics servers,
+	 * or different database drivers (SQLite, PostgreSQL).
+	 *
+	 * Connection is pooled and shared across all models for the request lifecycle.
+	 *
+	 * Examples:
+	 *   // Query builder on backup database
+	 *   $users = UserModel::using('backup')->where('status', 'active')->all();
+	 *
+	 *   // Read from replica, write to primary
+	 *   $products = ProductModel::using('read-replica-1')->all();
+	 *   ProductModel::save(['name' => 'New Product']);  // Saves to default
+	 *
+	 *   // Analytics database (separate server)
+	 *   $stats = OrderModel::using('analytics')->groupBy('product_id')->sum('total');
+	 *
+	 *   // SQLite for caching
+	 *   $cached = CacheModel::using('sqlite')->where('key', $key)->first();
+	 *
+	 *   // Raw SQL shorthand
+	 *   $result = UserModel::using('backup', "SELECT * FROM users WHERE id = ?", 1);
+	 *
+	 *   // Migration: old DB to new DB
+	 *   $oldRecords = LegacyModel::using('old_mysql')->all();
+	 *   foreach ($oldRecords as $record) {
+	 *       NewModel::save($record);  // Saves to default database
+	 *   }
+	 *
+	 * @param string $driver Connection name from database.php (e.g., 'backup', 'analytics', 'sqlite')
+	 * @param string|null $query Optional raw SQL query to execute immediately
+	 * @param mixed ...$params Optional parameters for query binding (when $query provided)
+	 * @return static|mixed Query builder (no query) or query result (with query)
+	 */
+	final public static function using($driver, $query = null, ...$params)
+	{
+		$instance = new static;
+		$instance->Query('driver', $driver);
+
+		if (isset(static::$table)) {
+			$instance->setTable();
+		}
+
+		if ($query !== null) {
+			return $instance->sql($query, ...$params);
+		}
+
+		return $instance;
 	}
 
 	/**
