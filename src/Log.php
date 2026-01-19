@@ -1,5 +1,8 @@
 <?php namespace Rackage;
 
+use Rackage\Path;
+use Rackage\Registry;
+
 /**
  * Log Helper
  *
@@ -17,11 +20,12 @@
  *   - DEBUG: Detailed debug information for development
  *
  * File Structure:
- *   All logs written to vault/logs/ directory:
- *   - error.log (default): ERROR and WARNING messages
- *   - app.log: INFO messages (if using Log::info())
- *   - debug.log: DEBUG messages (if using Log::debug())
- *   - custom.log: Via Log::to('custom.log')
+ *   All logs written to vault/logs/ directory (determined from error_log setting):
+ *   - error.log: ERROR messages (Log::error()) - auto-created if doesn't exist
+ *   - warning.log: WARNING messages (Log::warning()) - auto-created if doesn't exist
+ *   - info.log: INFO messages (Log::info()) - auto-created if doesn't exist
+ *   - debug.log: DEBUG messages (Log::debug()) - auto-created if doesn't exist
+ *   - custom.log: Custom files via Log::to('custom.log') - auto-created in log directory
  *
  * Log Format:
  *   [2024-01-15 14:30:45] [ERROR] Database connection failed {"host":"localhost","error":"Access denied"}
@@ -43,15 +47,10 @@
  *   Instance methods (Log::to('file.log')->error()) write to custom files.
  *   Use static for 99% of cases, instance for special log separation.
  *
- * Configuration (config/settings.php):
- *   'log_level' => 'debug',  // debug, info, warning, error (filters what gets written)
- *   'log_path' => 'vault/logs/',
- *
  * Performance:
  *   - Non-blocking file writes with exclusive locks (LOCK_EX)
  *   - Auto-creates log directory if missing
  *   - Silently fails on write errors (never crashes app)
- *   - Use enabled() check before expensive debug operations
  *
  * Usage Examples:
  *
@@ -87,12 +86,6 @@
  *       'user_agent' => Request::agent()
  *   ]);
  *
- *   // Conditional expensive logging
- *   if (Log::enabled('debug')) {
- *       $trace = debug_backtrace();
- *       Log::debug('Execution trace', ['trace' => $trace]);
- *   }
- *
  *   // Exception logging
  *   try {
  *       $result = riskyOperation();
@@ -104,6 +97,12 @@
  *           'trace' => $e->getTraceAsString()
  *       ]);
  *   }
+ *
+ *   // Debug with backtrace and variable snapshot
+ *   Log::debug('Execution snapshot', [
+ *       'trace' => debug_backtrace(),
+ *       'vars' => get_defined_vars()
+ *   ]);
  *
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
@@ -117,44 +116,39 @@
 class Log {
 
 	/**
-	 * Log level hierarchy for filtering
-	 * Higher numbers = more severe, lower numbers = more verbose
-	 *
-	 * @var array
-	 */
-	private static $levels = [
-		'debug' => 1,
-		'info' => 2,
-		'warning' => 3,
-		'error' => 4,
-	];
-
-	/**
 	 * Default log files for each level
+	 *
+	 * Maps log levels to their respective log filenames. Files are auto-created in
+	 * the log directory if they don't exist. Directory determined from error_log setting.
 	 *
 	 * @var array
 	 */
 	private static $defaultFiles = [
 		'debug' => 'debug.log',
-		'info' => 'app.log',
-		'warning' => 'error.log',
+		'info' => 'info.log',
+		'warning' => 'warning.log',
 		'error' => 'error.log',
 	];
 
 	/**
 	 * Custom log file for instance-based logging
-	 * Set via to() method
+	 *
+	 * Filename set via Log::to('filename.log'). File is auto-created in the log
+	 * directory if it doesn't exist. Used for specialized logging (security, api, etc.).
 	 *
 	 * @var string|null
 	 */
 	private $customFile = null;
 
 	/**
-	 * Cached configuration
+	 * Cached log directory path
 	 *
-	 * @var array
+	 * Computed once from config/settings.php error_log setting on first log call.
+	 * Cached to avoid repeated Registry/Path lookups when logging in loops or multiple calls.
+	 *
+	 * @var string|null
 	 */
-	private static $config = [];
+	private static $directory = null;
 
 	/**
 	 * Private constructor to prevent instantiation
@@ -183,11 +177,10 @@ class Log {
 	 * Use for exceptions, database errors, failed API calls, file system errors.
 	 *
 	 * Process:
-	 * 1. Check if error level is enabled in config
-	 * 2. Format message with timestamp and ERROR level
-	 * 3. Append context data as JSON if provided
-	 * 4. Write to error.log file
-	 * 5. Auto-create log directory if missing
+	 * 1. Format message with timestamp and ERROR level
+	 * 2. Append context data as JSON if provided
+	 * 3. Write to error.log file (auto-created if doesn't exist)
+	 * 4. Auto-create log directory if missing
 	 *
 	 * When to Use:
 	 *   - Exceptions and fatal errors
@@ -225,10 +218,10 @@ class Log {
 	 * Use for deprecated features, slow operations, unusual API usage, validation failures.
 	 *
 	 * Process:
-	 * 1. Check if warning level is enabled in config
-	 * 2. Format message with timestamp and WARNING level
-	 * 3. Append context data as JSON if provided
-	 * 4. Write to error.log file
+	 * 1. Format message with timestamp and WARNING level
+	 * 2. Append context data as JSON if provided
+	 * 3. Write to warning.log file (auto-created if doesn't exist)
+	 * 4. Auto-create log directory if missing
 	 *
 	 * When to Use:
 	 *   - Deprecated API usage
@@ -259,10 +252,10 @@ class Log {
 	 * Use for user activity tracking, important state changes, scheduled tasks.
 	 *
 	 * Process:
-	 * 1. Check if info level is enabled in config
-	 * 2. Format message with timestamp and INFO level
-	 * 3. Append context data as JSON if provided
-	 * 4. Write to app.log file
+	 * 1. Format message with timestamp and INFO level
+	 * 2. Append context data as JSON if provided
+	 * 3. Write to info.log file (auto-created if doesn't exist)
+	 * 4. Auto-create log directory if missing
 	 *
 	 * When to Use:
 	 *   - User login/logout
@@ -294,10 +287,10 @@ class Log {
 	 * Use for variable dumps, execution flow, API responses, query details.
 	 *
 	 * Process:
-	 * 1. Check if debug level is enabled in config
-	 * 2. Format message with timestamp and DEBUG level
-	 * 3. Append context data as JSON if provided
-	 * 4. Write to debug.log file
+	 * 1. Format message with timestamp and DEBUG level
+	 * 2. Append context data as JSON if provided
+	 * 3. Write to debug.log file (auto-created if doesn't exist)
+	 * 4. Auto-create log directory if missing
 	 *
 	 * When to Use:
 	 *   - Variable values during debugging
@@ -307,19 +300,10 @@ class Log {
 	 *   - Cache hit/miss details
 	 *   - Session data inspection
 	 *
-	 * Best Practice:
-	 *   Always wrap expensive debug logging in enabled() check to avoid
-	 *   performance impact in production.
-	 *
 	 * Usage:
 	 *   Log::debug('API response received', ['status' => 200, 'body' => $response]);
 	 *   Log::debug('Query executed', ['sql' => $sql, 'params' => $params, 'rows' => $count]);
-	 *
-	 *   // Conditional expensive logging
-	 *   if (Log::enabled('debug')) {
-	 *       $trace = debug_backtrace();
-	 *       Log::debug('Execution trace', ['trace' => $trace]);
-	 *   }
+	 *   Log::debug('Execution snapshot', ['trace' => debug_backtrace(), 'vars' => get_defined_vars()]);
 	 *
 	 * @param string $message Debug message
 	 * @param array $context Additional context data
@@ -428,63 +412,6 @@ class Log {
 	}
 
 	// ===========================================================================
-	// UTILITY METHODS
-	// ===========================================================================
-
-	/**
-	 * Check if log level is enabled
-	 *
-	 * Determines if a specific log level will be written based on configuration.
-	 * Use this before expensive debug operations to avoid performance impact.
-	 *
-	 * Process:
-	 * 1. Load configuration
-	 * 2. Get configured minimum log level
-	 * 3. Compare requested level against minimum
-	 * 4. Return true if level is enabled
-	 *
-	 * Log Level Hierarchy:
-	 *   debug < info < warning < error
-	 *
-	 * Examples:
-	 *   If config log_level = 'info':
-	 *     - debug: disabled (too verbose)
-	 *     - info: enabled
-	 *     - warning: enabled
-	 *     - error: enabled
-	 *
-	 * Usage:
-	 *   // Check before expensive operations
-	 *   if (Log::enabled('debug')) {
-	 *       $trace = debug_backtrace();
-	 *       $vars = get_defined_vars();
-	 *       Log::debug('Debug snapshot', ['trace' => $trace, 'vars' => $vars]);
-	 *   }
-	 *
-	 *   // General check
-	 *   if (Log::enabled()) {
-	 *       Log::info('Logging is enabled');
-	 *   }
-	 *
-	 * @param string $level Log level to check (debug, info, warning, error)
-	 * @return bool True if level is enabled, false otherwise
-	 */
-	public static function enabled($level = 'debug')
-	{
-		self::loadConfig();
-
-		// Get configured minimum level (default: debug = log everything)
-		$configLevel = self::$config['log_level'] ?? 'debug';
-
-		// Get numeric values for comparison
-		$configValue = self::$levels[$configLevel] ?? 1;
-		$checkValue = self::$levels[$level] ?? 1;
-
-		// Level is enabled if it's >= configured minimum
-		return $checkValue >= $configValue;
-	}
-
-	// ===========================================================================
 	// INTERNAL HELPERS
 	// ===========================================================================
 
@@ -492,16 +419,14 @@ class Log {
 	 * Write log entry (static method)
 	 *
 	 * Internal method that handles actual log writing for static log methods.
-	 * Formats message, checks level filtering, and writes to appropriate file.
+	 * Formats message and writes to appropriate file based on level.
 	 *
 	 * Process:
-	 * 1. Check if level is enabled in config
-	 * 2. Load configuration if needed
-	 * 3. Build log entry: [timestamp] [LEVEL] message {context}
-	 * 4. Determine target file from level
-	 * 5. Ensure log directory exists
-	 * 6. Write to file with exclusive lock
-	 * 7. Silently fail on write errors (never crash app)
+	 * 1. Build log entry: [timestamp] [LEVEL] message {context}
+	 * 2. Determine target file from level
+	 * 3. Get absolute filepath (auto-creates directory if missing)
+	 * 4. Write to file with exclusive lock
+	 * 5. Silently fail on write errors (never crash app)
 	 *
 	 * Format:
 	 *   [2024-01-15 14:30:45] [ERROR] Database connection failed {"host":"localhost"}
@@ -513,13 +438,6 @@ class Log {
 	 */
 	private static function write($level, $message, $context = [])
 	{
-		// Check if level is enabled
-		if (!self::enabled($level)) {
-			return;
-		}
-
-		self::loadConfig();
-
 		// Build log entry
 		$entry = self::formatEntry($level, $message, $context);
 
@@ -544,13 +462,6 @@ class Log {
 	 */
 	private function writeInstance($level, $message, $context = [])
 	{
-		// Check if level is enabled
-		if (!self::enabled($level)) {
-			return;
-		}
-
-		self::loadConfig();
-
 		// Build log entry
 		$entry = self::formatEntry($level, $message, $context);
 
@@ -604,26 +515,29 @@ class Log {
 	/**
 	 * Get full log file path
 	 *
-	 * Builds absolute path to log file in vault/logs/ directory.
+	 * Extracts log directory from error_log setting on first call, then caches it.
+	 * Appends filename to cached directory path for subsequent calls.
 	 *
 	 * @param string $filename Log filename
 	 * @return string Absolute path to log file
 	 */
 	private static function getLogPath($filename)
 	{
-		$logDir = self::$config['log_path'] ?? 'vault/logs/';
+		// Compute directory once on first call
+		if (self::$directory === null) {
+			$errorLog = Registry::settings()['error_log']; // e.g., 'vault/logs/error.log'
+			$logDir = dirname($errorLog); // e.g., 'vault/logs'
 
-		// Remove trailing slash if present
-		$logDir = rtrim($logDir, '/\\');
-
-		// Build absolute path
-		if (class_exists('Rackage\Path')) {
-			return Path::base() . $logDir . DIRECTORY_SEPARATOR . $filename;
+			if ($logDir === '.') {
+				// File in root directory (no subdirectory)
+				self::$directory = Path::base();
+			} else {
+				// File in subdirectory
+				self::$directory = Path::base() . DIRECTORY_SEPARATOR . $logDir;
+			}
 		}
 
-		// Fallback if Path helper not available
-		$baseDir = dirname(dirname(dirname(dirname(__DIR__))));
-		return $baseDir . DIRECTORY_SEPARATOR . $logDir . DIRECTORY_SEPARATOR . $filename;
+		return self::$directory . DIRECTORY_SEPARATOR . $filename;
 	}
 
 	/**
@@ -681,37 +595,6 @@ class Log {
 			}
 		} catch (\Exception $e) {
 			// Silently fail - logging should never crash the app
-		}
-	}
-
-	/**
-	 * Load configuration
-	 *
-	 * Loads log configuration from Registry on first use.
-	 * Caches configuration to avoid repeated Registry lookups.
-	 *
-	 * Configuration Keys:
-	 *   - log_level: Minimum level to log (debug, info, warning, error)
-	 *   - log_path: Directory for log files (default: vault/logs/)
-	 *
-	 * @return void
-	 */
-	private static function loadConfig()
-	{
-		if (empty(self::$config)) {
-			if (class_exists('Rackage\Registry')) {
-				$settings = Registry::settings();
-				self::$config = [
-					'log_level' => $settings['log_level'] ?? 'debug',
-					'log_path' => $settings['log_path'] ?? 'vault/logs/',
-				];
-			} else {
-				// Fallback if Registry not available
-				self::$config = [
-					'log_level' => 'debug',
-					'log_path' => 'vault/logs/',
-				];
-			}
 		}
 	}
 
