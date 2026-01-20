@@ -350,8 +350,19 @@ class View {
             // Clear variables after rendering
             self::$variables = array();
         }
-        catch (TemplateException $exception) {
-            throw $exception;
+        catch (\Throwable $exception) {
+            // Catch all exceptions and errors during template rendering
+            // Clear any buffered output to prevent partial rendering
+            if ($shouldCache && ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            // Convert to PHP error so it goes through proper error handler (Shutdown.php)
+            // This ensures consistent error display instead of PHP's default error page
+            trigger_error(
+                $exception->getMessage() . ' in ' . $exception->getFile() . ' on line ' . $exception->getLine(),
+                E_USER_ERROR
+            );
         }
     }
 

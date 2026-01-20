@@ -32,8 +32,6 @@
 use Rackage\Registry;
 use Rackage\Cache;
 use Rackage\Request;
-use Rackage\Utilities\UrlParser;
-use Rackage\Utilities\Inspector;
 use ReflectionClass;
 
 class Router {
@@ -49,12 +47,6 @@ class Router {
 	 * @var array
 	 */
 	private $routes;
-
-	/**
-	 * URL parser instance
-	 * @var UrlParser
-	 */
-	private $urlParser;
 
 	/**
 	 * Route parser instance
@@ -82,16 +74,14 @@ class Router {
 
 	/**
 	 * Constructor - Initialize router with dependencies
-	 * 
+	 *
 	 * @param array $settings Application settings
 	 * @param array $routes Route definitions
-	 * @param UrlParser|null $urlParser Optional URL parser (for testing)
 	 */
-	public function __construct($settings, $routes, $urlParser = null)
+	public function __construct($settings, $routes)
 	{
 		$this->settings = $settings;
 		$this->routes = $routes;
-		$this->urlParser = $urlParser;
 	}
 
 	/**
@@ -118,8 +108,7 @@ class Router {
 				return;
 			}
 
-			// Parse URL and resolve routing
-			$this->parseUrl();
+			// Match route and resolve routing
 			$this->matchRoute();
 			$this->resolveController();
 			$this->resolveAction();
@@ -222,34 +211,6 @@ class Router {
 	}
 
 	// ===========================================================================
-	// URL PARSING
-	// ===========================================================================
-
-	/**
-	 * Parse the incoming URL into components
-	 *
-	 * Creates UrlParser instance and extracts controller, method, and parameters
-	 * from the URL string.
-	 *
-	 * @return void
-	 */
-	private function parseUrl()
-	{
-		// Create URL parser if not injected (for testing)
-		if ($this->urlParser === null) {
-			$this->urlParser = new UrlParser(
-				Registry::url(),
-				$this->settings['url_separator']
-			);
-		}
-
-		// Parse URL into controller, method, and parameters
-		$this->urlParser->setController()
-		                ->setMethod()
-		                ->setParameters();
-	}
-
-	// ===========================================================================
 	// ROUTE MATCHING
 	// ===========================================================================
 
@@ -263,22 +224,23 @@ class Router {
 	 */
 	private function matchRoute()
 	{
-		// Create route parser instance
+		// Create route parser instance (parses URL in constructor)
 		$this->routeParser = new RouteParser(
 			Registry::url(),
-			$this->routes,
-			$this->urlParser
+			$this->routes
 		);
 
 		// Check if URL matches a defined route
 		if ($this->routeParser->matchRoute()) {
-			// Route matched - let RouteParser set controller, method, params
+			// Route matched - let RouteParser set controller, method, params from route
 			$this->routeParser->setController()
 			                  ->setMethod()
 			                  ->setParameters();
 		} else {
-			// No route matched - set parameters from URL parser
-			$this->routeParser->setParameters();
+			// No route matched - extract controller, method, params from URL
+			$this->routeParser->setControllerUrl()
+			                  ->setMethodUrl()
+			                  ->setParameters();
 		}
 	}
 
@@ -298,18 +260,12 @@ class Router {
 	 */
 	private function resolveController()
 	{
-		// Check if URL parser found a controller
-		if ($this->urlParser->getController() !== null) {
-			
-			// Check if a route was matched
-			if ($this->routeParser->matchRoute()) {
-				// Use controller from matched route
-				$this->controller = $this->routeParser->getController();
-			} else {
-				// Use controller from URL
-				$this->controller = $this->urlParser->getController();
-			}
+		// Check if route parser found a controller
+		$controller = $this->routeParser->getController();
 
+		if ($controller !== null) {
+			// Use controller from matched route or URL
+			$this->controller = $controller;
 		} else {
 			// No controller in URL - use default
 			$this->controller = $this->settings['default']['controller'];
@@ -328,22 +284,14 @@ class Router {
 	 */
 	private function resolveAction()
 	{
-		// Check if URL parser found a controller
-		if ($this->urlParser->getController() !== null) {
-			
-			// Check if a route was matched
-			if ($this->routeParser->matchRoute()) {
-				// Use action from matched route or default
-				$this->action = $this->routeParser->getMethod() 
-				             ?: $this->settings['default']['action'];
-			} else {
-				// Use action from URL or default
-				$this->action = $this->urlParser->getMethod() 
-				             ?: $this->settings['default']['action'];
-			}
+		// Check if route parser found a method
+		$method = $this->routeParser->getMethod();
 
+		if ($method !== null) {
+			// Use action from matched route or URL
+			$this->action = $method;
 		} else {
-			// No controller in URL - use default action
+			// No method in URL - use default action
 			$this->action = $this->settings['default']['action'];
 		}
 
@@ -505,10 +453,10 @@ class Router {
 	{
 		try {
 			// Get class-level filters from docblock
-			$classFilters = Inspector::checkFilter($reflection->getDocComment());
+			$classFilters = $this->parseFilters($reflection->getDocComment());
 
 			// Get method-level filters from docblock
-			$methodFilters = Inspector::checkFilter($method->getDocComment());
+			$methodFilters = $this->parseFilters($method->getDocComment());
 
 			// Merge filters in correct order
 			$filters = $this->mergeFilters($classFilters, $methodFilters);
@@ -663,6 +611,104 @@ class Router {
 					break;
 			}
 		}
+	}
+
+	/**
+	 * Parse @before and @after filters from docblock
+	 *
+	 * Extracts filter annotations from controller method docblocks.
+	 * Supports both single method names and class/method pairs.
+	 *
+	 * Filter Syntax:
+	 *
+	 *   Single method (on current controller):
+	 *     @before checkAuth
+	 *     @after logActivity
+	 *
+	 *   External class and method:
+	 *     @before AuthFilter, check
+	 *     @before Filters\Security, validateToken
+	 *
+	 *   Multiple filters:
+	 *     @before checkAuth
+	 *     @before checkAdmin
+	 *     @after clearCache
+	 *     @after logActivity
+	 *
+	 * Examples:
+	 *   Input:  "/** @before checkAuth @before validateInput @after log *\/"
+	 *   Output: ['before' => [['checkAuth'], ['validateInput']], 'after' => [['log']]]
+	 *
+	 *   Input:  "/** @before AuthFilter check *\/"
+	 *   Output: ['before' => [['AuthFilter', 'check']]]
+	 *
+	 *   Input:  "/** @param string $id *\/"  (no filters)
+	 *   Output: []
+	 *
+	 * Notes:
+	 *   - Commas are automatically stripped from filter names
+	 *   - Extra whitespace is trimmed
+	 *   - Returns empty array if no filters found (not false)
+	 *   - Each @before/@after can have 1 parameter (method) or 2 (class, method)
+	 *
+	 * Filter Format:
+	 *   - Method only: "methodName"
+	 *   - Class + method: "ClassName, methodName" or "ClassName,methodName"
+	 *   - Commas and extra spaces are automatically cleaned
+	 *
+	 * @param string $docblock The docblock comment string
+	 * @return array Array with 'before' and/or 'after' keys, or empty array
+	 */
+	private function parseFilters($docblock)
+	{
+		// Match only @before and @after annotations (ignore @param, @return, etc.)
+		$pattern = "#@(before|after)\s+([a-zA-Z0-9\\\\_,\s]+)#";
+
+		preg_match_all($pattern, $docblock, $matches, PREG_SET_ORDER);
+
+		// No filters found, return empty array
+		if (empty($matches)) {
+			return [];
+		}
+
+		$beforeFilters = [];
+		$afterFilters = [];
+
+		// Process each @before or @after annotation
+		foreach ($matches as $match) {
+			$filterType = $match[1];  // "before" or "after"
+			$filterValue = $match[2]; // "checkAuth" or "AuthFilter, check"
+
+			// Split by space to get individual parameters
+			$parts = preg_split('/\s+/', trim($filterValue));
+
+			// Clean each part (remove commas, trim whitespace, remove empties)
+			$cleanParts = [];
+			foreach ($parts as $part) {
+				$cleaned = trim(str_replace(',', '', $part));
+				if (!empty($cleaned)) {
+					$cleanParts[] = $cleaned;
+				}
+			}
+
+			// Add to appropriate filter array (as nested array)
+			if ($filterType === 'before') {
+				$beforeFilters[] = $cleanParts;
+			} else {
+				$afterFilters[] = $cleanParts;
+			}
+		}
+
+		// Build return array
+		$result = [];
+		if (!empty($beforeFilters)) {
+			$result['before'] = $beforeFilters;
+		}
+		if (!empty($afterFilters)) {
+			$result['after'] = $afterFilters;
+		}
+
+		return $result;
 	}
 
 	// ===========================================================================

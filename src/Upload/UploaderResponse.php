@@ -1,4 +1,4 @@
-<?php namespace Rackage\Uploader;
+<?php namespace Rackage\Upload;
 
 /**
  * Upload Response Object

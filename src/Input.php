@@ -238,18 +238,17 @@ class Input {
 	 * Checks all sources with priority: GET → POST → URL (URL wins).
 	 *
 	 * Security:
-	 *   Single values are automatically escaped with htmlentities(ENT_QUOTES)
-	 *   to prevent XSS attacks. If requesting all parameters (name=null),
-	 *   returns raw array without escaping.
+	 *   Returns RAW values. Escaping should be done at display level (templates with {{ }})
+	 *   or at database level (query builder with prepared statements).
 	 *
 	 * Source Priority:
 	 *   If same parameter exists in multiple sources, URL value is returned,
 	 *   then POST, then GET.
 	 *
 	 * Usage:
-	 *   Input::get('username');              // Get specific parameter (escaped)
+	 *   Input::get('username');              // Get specific parameter (raw)
 	 *   Input::get('age', 18);               // With default value
-	 *   Input::get();                        // Get all parameters (array, not escaped)
+	 *   Input::get();                        // Get all parameters (array)
 	 *
 	 * Example:
 	 *   URL: /user?name=John
@@ -259,19 +258,19 @@ class Input {
 	 *
 	 * @param string|null $name Parameter name, or null to get all parameters
 	 * @param mixed $default Default value if parameter not found
-	 * @return mixed Escaped string if found, default value if not found, or array if name is null
+	 * @return mixed Raw value if found, default value if not found, or array if name is null
 	 */
 	public static function get($name = null, $default = false)
 	{
-		// If no name provided, return all combined parameters (unescaped)
+		// If no name provided, return all combined parameters
 		if ($name === null) {
 			return self::$combined;
 		}
 
 		// Check if parameter exists in any source
 		if (array_key_exists($name, self::$combined)) {
-			// Escape value to prevent XSS
-			return htmlentities(self::$combined[$name], ENT_QUOTES);
+			// Return raw value - escaping should happen at display or database level
+			return self::$combined[$name];
 		}
 
 		// Parameter not found - return default
@@ -304,8 +303,8 @@ class Input {
 	 * Useful when you specifically need form POST data.
 	 *
 	 * Security:
-	 *   Single values are automatically escaped with htmlentities(ENT_QUOTES).
-	 *   If requesting all parameters (name=null), returns raw array.
+	 *   Returns RAW values. Escaping should be done at display level (templates with {{ }})
+	 *   or at database level (query builder with prepared statements).
 	 *
 	 * Use cases:
 	 *   - Form submissions (login, registration, etc.)
@@ -313,25 +312,25 @@ class Input {
 	 *   - API endpoints that only accept POST
 	 *
 	 * Usage:
-	 *   Input::post('password');             // Get specific POST parameter
+	 *   Input::post('password');             // Get specific POST parameter (raw)
 	 *   Input::post('token', '');            // With default value
 	 *   Input::post();                       // Get all POST data (array)
 	 *
 	 * @param string|null $name Parameter name, or null for all POST data
 	 * @param mixed $default Default value if parameter not found
-	 * @return mixed Escaped string if found, default value if not found, or array if name is null
+	 * @return mixed Raw value if found, default value if not found, or array if name is null
 	 */
 	public static function post($name = null, $default = false)
 	{
-		// If no name provided, return all POST parameters (unescaped)
+		// If no name provided, return all POST parameters
 		if ($name === null) {
 			return self::$post;
 		}
 
 		// Check if parameter exists in POST data
 		if (array_key_exists($name, self::$post)) {
-			// Escape value to prevent XSS
-			return htmlentities(self::$post[$name], ENT_QUOTES);
+			// Return raw value - escaping should happen at display or database level
+			return self::$post[$name];
 		}
 
 		// Parameter not found - return default
