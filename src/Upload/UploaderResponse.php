@@ -35,7 +35,7 @@
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2050 Geoffrey Okongo
  * @category Rackage
- * @package Rackage\Upload
+ * @package Rackage\Uploader
  * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.2

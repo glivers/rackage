@@ -30,7 +30,7 @@
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2050 Geoffrey Okongo
  * @category Rackage
- * @package Rackage\Upload
+ * @package Rackage\Uploader
  * @link https://github.com/glivers/rackage
  * @license http://opensource.org/licenses/MIT MIT License
  * @version 2.0.3
@@ -101,6 +101,20 @@ class Uploader {
     private $uploadPath;
 
     /**
+     * Whether to hash filename with SHA1
+     *
+     * @var bool
+     */
+    private $hashName = false;
+
+    /**
+     * Whether to lowercase the filename
+     *
+     * @var bool
+     */
+    private $lowerCase = false;
+
+    /**
      * Relative path from application root to uploaded file
      *
      * @var string
@@ -157,6 +171,30 @@ class Uploader {
     public function setFileName($fileName)
     {
         $this->fileName = $fileName;
+        return $this;
+    }
+
+    /**
+     * Set whether to hash filename
+     *
+     * @param bool $hashName True to use SHA1 hash, false for original name
+     * @return $this
+     */
+    public function setHashName($hashName)
+    {
+        $this->hashName = $hashName;
+        return $this;
+    }
+
+    /**
+     * Set whether to lowercase filename
+     *
+     * @param bool $lowerCase True to lowercase filename
+     * @return $this
+     */
+    public function setLowerCase($lowerCase)
+    {
+        $this->lowerCase = $lowerCase;
         return $this;
     }
 
@@ -233,8 +271,44 @@ class Uploader {
             return $this;
         }
 
-        $hash = sha1_file($_FILES[$this->fileName]['tmp_name']);
-        $this->targetFileName = sprintf('%s.%s', $hash, $this->fileType);
+        if ($this->hashName) {
+            // Use SHA1 hash (guaranteed unique, no collision risk)
+            $hash = sha1_file($_FILES[$this->fileName]['tmp_name']);
+            $this->targetFileName = sprintf('%s.%s', $hash, $this->fileType);
+        } else {
+            // Use sanitized original filename (SEO-friendly)
+            $originalName = $_FILES[$this->fileName]['name'];
+            $basename = pathinfo($originalName, PATHINFO_FILENAME);
+
+            // Apply lowercase if flag is set
+            if ($this->lowerCase) {
+                $basename = strtolower($basename);
+            }
+
+            // Sanitize: keep alphanumeric, hyphens, underscores only
+            $sanitized = preg_replace('/[^a-zA-Z0-9\-_]/', '-', $basename);
+            // Replace multiple hyphens with single hyphen
+            $sanitized = preg_replace('/-+/', '-', $sanitized);
+            // Trim hyphens from start/end
+            $sanitized = trim($sanitized, '-');
+
+            // If empty after sanitization, use timestamp
+            if (empty($sanitized)) {
+                $sanitized = 'upload-' . time();
+            }
+
+            // Check for duplicates and add numeric suffix
+            $extension = $this->fileType;
+            $counter = 0;
+            $testName = $sanitized . '.' . $extension;
+
+            while (file_exists($this->targetDir . DIRECTORY_SEPARATOR . $testName)) {
+                $counter++;
+                $testName = $sanitized . '-' . $counter . '.' . $extension;
+            }
+
+            $this->targetFileName = $testName;
+        }
 
         return $this;
     }

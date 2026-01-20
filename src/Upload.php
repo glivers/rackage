@@ -114,6 +114,20 @@ class Upload {
     protected static $maxSize;
 
     /**
+     * Whether to hash filename (SHA1) or use original name
+     *
+     * @var bool
+     */
+    protected static $hashName;
+
+    /**
+     * Whether to lowercase the filename
+     *
+     * @var bool
+     */
+    protected static $lowerCase;
+
+    /**
      * Private constructor - prevent instantiation
      *
      * @return void
@@ -147,6 +161,8 @@ class Upload {
         static::$path = null;
         static::$allowedTypes = null;
         static::$maxSize = null;
+        static::$hashName = false;
+        static::$lowerCase = false;
 
         return new static;
     }
@@ -227,6 +243,39 @@ class Upload {
     }
 
     /**
+     * Use SHA1 hash for filename
+     *
+     * When enabled, files are saved with SHA1 hash instead of original name.
+     * Guarantees unique filenames and prevents collisions.
+     *
+     * Example:
+     *   ->hashName()->save()  // a3f5d8c9e2b1f4a6...jpg
+     *
+     * @return static For method chaining
+     */
+    public static function hashName()
+    {
+        static::$hashName = true;
+        return new static;
+    }
+
+    /**
+     * Lowercase the filename
+     *
+     * Converts filename to lowercase for consistency and SEO.
+     *
+     * Example:
+     *   ->lowerCase()->save()  // my-photo.jpg
+     *
+     * @return static For method chaining
+     */
+    public static function lowerCase()
+    {
+        static::$lowerCase = true;
+        return new static;
+    }
+
+    /**
      * Execute the file upload
      *
      * Performs validation and uploads the file.
@@ -235,23 +284,28 @@ class Upload {
      * Validation errors (wrong type, too large) are returned in response.
      * System errors (directory issues) throw UploaderException.
      *
-     * Example:
+     * Examples:
+     *   // Original filename (default)
      *   $result = Upload::file('avatar')
      *       ->allowedTypes(['jpg', 'png'])
      *       ->maxSize(2 * 1024 * 1024)
-     *       ->save();
+     *       ->save();  // My-Photo.jpg
+     *
+     *   // Lowercase filename
+     *   ->lowerCase()->save();  // my-photo.jpg
+     *
+     *   // SHA1 hash
+     *   ->hashName()->save();  // a3f5d8c9e2b1...jpg
      *
      *   if ($result->success) {
-     *       // Success
      *       echo $result->relativePath;
      *       echo $result->publicUrl;
      *   } else {
-     *       // Validation error (show to user)
      *       echo $result->errorMessage;
      *   }
      *
      * @return UploaderResponse Upload result with file details or error
-     * @throws \Rackage\Upload\UploaderException On system errors (directory issues)
+     * @throws \Rackage\Uploader\UploaderException On system errors (directory issues)
      */
     public static function save()
     {
@@ -262,6 +316,8 @@ class Upload {
         return $uploader
             ->setUploadPath(static::$path)
             ->setFileName(static::$fileName)
+            ->setHashName(static::$hashName)
+            ->setLowerCase(static::$lowerCase)
             ->setTargetDir()
             ->setFileType()
             ->setMimeType()
