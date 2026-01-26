@@ -258,112 +258,99 @@ class View {
      */
     private static function renderView($fileName, array $data, $status, $parse)
     {
-        try {
-            // Set HTTP status code
-            if ($status !== 200) {
-                http_response_code($status);
-            }
-
-            // Merge passed data with existing variables
-            $allVariables = array_merge(self::$variables, $data);
-
-            // Extract variables into local scope
-            // foreach ($allVariables as $key => $value) {
-                
-            //     $$key = $value;
-            // }
-
-            extract($allVariables);
-
-            // Determine whether to parse template
-            $shouldParse = $parse && (Registry::settings()['template_engine'] !== false);
-
-            // Get view contents (compiled or raw)
-            if ($shouldParse) {
-
-                $contents = self::getHeaderContent() . self::getContents($fileName, false);
-            } 
-            else {
-
-                $contents = self::getHeaderContent() . file_get_contents(Path::view($fileName));
-            }
-
-            // Check if Router decided this page should be cached
-            $shouldCache = self::shouldCache();
-
-            // Start output buffering if caching is enabled
-            if ($shouldCache) {
-                ob_start();
-            }
-
-            // =======================================================================
-            // RENDER TEMPLATE
-            // =======================================================================
-            //
-            // Two rendering modes based on environment:
-            //
-            // DEV MODE (file-based):
-            //   - Writes compiled template to vault/tmp/
-            //   - Better error paths in stack traces (real file paths)
-            //   - On error, temp file preserved for inspection
-            //   - On success, temp file deleted immediately
-            //
-            // PRODUCTION MODE (stream-based):
-            //   - Serves template directly from memory via stream wrapper
-            //   - Zero disk I/O (~26x faster than file-based)
-            //   - Consistent performance under server load
-            //   - No orphaned temp files, no disk wear
-            //
-            // =======================================================================
-
-            if (DEV) {
-
-                $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
-
-                if (!is_dir($tmpDir)) {
-                    mkdir($tmpDir, 0755, true);
-                }
-
-                $filePath = $tmpDir . uniqid('view_', true) . '.php';
-                file_put_contents($filePath, $contents);
-
-                include $filePath;
-
-                unlink($filePath);
-            }
-            else {
-
-                TemplateStream::setContent($contents);
-
-                include 'rachie-template://render';
-
-                TemplateStream::clearContent();
-            }
-
-            // Store in cache if needed
-            if ($shouldCache) {
-                $output = ob_get_contents();
-                ob_end_flush();
-                self::storeCache($output);
-            }
-
-            // Clear variables after rendering
-            self::$variables = array();
+        // Set HTTP status code
+        if ($status !== 200) {
+            http_response_code($status);
         }
-        catch (\Throwable $exception) {
-            // Catch all exceptions and errors during template rendering
-            // Clear any buffered output to prevent partial rendering
-            if ($shouldCache && ob_get_level() > 0) {
-                ob_end_clean();
+
+        // Merge passed data with existing variables
+        $allVariables = array_merge(self::$variables, $data);
+
+        // Extract variables into local scope
+        // foreach ($allVariables as $key => $value) {
+            
+        //     $$key = $value;
+        // }
+
+        extract($allVariables);
+
+        // Determine whether to parse template
+        $shouldParse = $parse && (Registry::settings()['template_engine'] !== false);
+
+        // Get view contents (compiled or raw)
+        if ($shouldParse) {
+
+            $contents = self::getHeaderContent() . self::getContents($fileName, false);
+        } 
+        else {
+
+            $contents = self::getHeaderContent() . file_get_contents(Path::view($fileName));
+        }
+
+        // Check if Router decided this page should be cached
+        $shouldCache = self::shouldCache();
+
+        // ALWAYS start output buffering (for error handling AND optional caching)
+        ob_start();
+
+        // =======================================================================
+        // RENDER TEMPLATE
+        // =======================================================================
+        //
+        // Two rendering modes based on environment:
+        //
+        // DEV MODE (file-based):
+        //   - Writes compiled template to vault/tmp/
+        //   - Better error paths in stack traces (real file paths)
+        //   - On error, temp file preserved for inspection
+        //   - On success, temp file deleted immediately
+        //
+        // PRODUCTION MODE (stream-based):
+        //   - Serves template directly from memory via stream wrapper
+        //   - Zero disk I/O (~26x faster than file-based)
+        //   - Consistent performance under server load
+        //   - No orphaned temp files, no disk wear
+        //
+        // =======================================================================
+
+        if (DEV) {
+
+            $tmpDir = Registry::settings()['root'] . '/vault/tmp/';
+
+            if (!is_dir($tmpDir)) {
+                mkdir($tmpDir, 0755, true);
             }
 
-            // Convert to PHP error so it goes through proper error handler (Shutdown.php)
-            // This ensures consistent error display instead of PHP's default error page
-            trigger_error(
-                $exception->getMessage() . ' in ' . $exception->getFile() . ' on line ' . $exception->getLine(),
-                E_USER_ERROR
-            );
+            $filePath = $tmpDir . uniqid('view_', true) . '.php';
+            file_put_contents($filePath, $contents);
+
+            include $filePath;
+
+            unlink($filePath);
         }
+        else {
+
+            TemplateStream::setContent($contents);
+
+            include 'rachie-template://render';
+
+            TemplateStream::clearContent();
+        }
+
+        // Handle buffered output
+        if ($shouldCache) {
+            // Caching enabled: capture output, store it, then send to browser
+            $output = ob_get_contents();
+            ob_end_flush();
+            self::storeCache($output);
+        }
+        else {
+            // No caching: just send buffered output to browser
+            ob_end_flush();
+        }
+
+        // Clear variables after rendering
+        self::$variables = array();
     }
 
 
