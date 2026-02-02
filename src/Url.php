@@ -73,13 +73,26 @@ class Url {
 	 */
 	private static function buildBaseUrl()
 	{
+		// Use SERVER_NAME (trusted) and append non-standard ports
 		$base = $_SERVER['SERVER_NAME'];
+		$port = $_SERVER['SERVER_PORT'] ?? '80';
+
+		// Append port if non-standard (not 80 for HTTP, not 443 for HTTPS)
+		$isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != "off");
+		$standardPort = $isHttps ? '443' : '80';
+		if ($port != $standardPort) {
+			$base .= ':' . $port;
+		}
+
 		$url = Registry::url();
 
+		// Strip query parameters from REQUEST_URI
+		$requestPath = strtok($_SERVER['REQUEST_URI'], '?');
+
 		if (!empty($url)) {
-			$base .= substr($_SERVER['REQUEST_URI'], 0, strpos($_SERVER['REQUEST_URI'], Registry::url()));
+			$base .= substr($requestPath, 0, strpos($requestPath, Registry::url()));
 		} else {
-			$base .= substr($_SERVER['REQUEST_URI'], 0);
+			$base .= $requestPath;
 		}
 
 		// Determine protocol
