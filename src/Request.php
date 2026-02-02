@@ -679,15 +679,17 @@ class Request {
      */
     public static function header($name, $default = null)
     {
-        $serverKey = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+        // Use headers() method for consistency (handles getallheaders() properly)
+        $headers = self::headers();
 
-        // Special cases without HTTP_ prefix
-        $key = strtoupper(str_replace('-', '_', $name));
-        if ($key === 'CONTENT_TYPE' || $key === 'CONTENT_LENGTH') {
-            $serverKey = $key;
+        // Case-insensitive search
+        foreach ($headers as $key => $value) {
+            if (strcasecmp($key, $name) === 0) {
+                return $value;
+            }
         }
 
-        return $_SERVER[$serverKey] ?? $default;
+        return $default;
     }
 
     /**
