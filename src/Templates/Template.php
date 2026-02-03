@@ -298,15 +298,21 @@ class Template {
 
 			// Replace empty placeholder @section('name'):
 			$pattern1 = '/(?<!@)@section\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*\):/';
-			$layoutContent = preg_replace($pattern1, $content, $layoutContent);
+			$layoutContent = preg_replace_callback($pattern1, function() use ($content) {
+			return $content;
+		}, $layoutContent);
 
 			// Replace block section @section('name') ... @endsection
 			$pattern2 = '/(?<!@)@section\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*\).*?(?<!@)@endsection/s';
-			$layoutContent = preg_replace($pattern2, $content, $layoutContent);
+			$layoutContent = preg_replace_callback($pattern2, function() use ($content) {
+			return $content;
+		}, $layoutContent);
 
 			// Replace @yield('name') - cleaner alternative to @section('name'):
 			$pattern3 = '/(?<!@)@yield\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*\)/';
-			$layoutContent = preg_replace($pattern3, $content, $layoutContent);
+			$layoutContent = preg_replace_callback($pattern3, function() use ($content) {
+			return $content;
+		}, $layoutContent);
 		}
 
 		// Clean up: Remove remaining empty placeholders
