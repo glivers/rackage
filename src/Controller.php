@@ -40,7 +40,7 @@
  *   $this->settings            Quick access to all settings
  *
  * Available Methods:
- *   $this->_requestExecutionTime()  Get request execution time in seconds
+ *   $this->_requestTime()  Get request execution time in seconds
  *
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
@@ -60,7 +60,7 @@ class Controller
      * Request start time (microtime)
      * @var float
      */
-    public $request_start_time;
+    public $request_start;
 
     /**
      * Site title from config/settings.php
@@ -78,7 +78,7 @@ class Controller
      * Application settings (quick access to Registry::settings())
      * @var array
      */
-    public $settings;
+    public $settings = [];
 
     /**
      * Magic method for HTTP verb-based method routing
@@ -133,7 +133,7 @@ class Controller
      * Called automatically by the router before controller method execution.
      *
      * Properties set:
-     *   - request_start_time: Timestamp when request started (for performance tracking)
+     *   - request_start: Timestamp when request started (for performance tracking)
      *   - site_title: Application title from config/settings.php
      *   - settings: Complete settings array for quick access
      *
@@ -141,16 +141,16 @@ class Controller
      *
      * @return $this Controller instance for method chaining
      */
-    public function _setRachieProperties()
+    public function _addSettings()
     {
         // Set request start time for performance tracking
-        $this->request_start_time = Registry::$rachie_app_start;
+        $this->request_start = Registry::$rachie_app_start;
 
         // Set site title from configuration
         $this->site_title = Registry::settings()['title'];
 
         // Set settings for quick access
-        $this->settings = Registry::settings();
+        $this->settings = array_merge($this->settings, Registry::settings());
 
         // Return instance for chaining
         return $this;
@@ -164,23 +164,23 @@ class Controller
      *
      * Examples:
      *   // In controller method
-     *   $time = $this->_requestExecutionTime();  // 0.0234 (seconds)
+     *   $time = $this->_requestTime();  // 0.0234 (seconds)
      *
      *   // Format for display
-     *   $ms = number_format($this->_requestExecutionTime() * 1000, 2);
+     *   $ms = number_format($this->_requestTime() * 1000, 2);
      *   echo "Page generated in {$ms}ms";
      *
      *   // Pass to view for debug footer
      *   View::with([
-     *       'execution_time' => $this->_requestExecutionTime()
+     *       'execution_time' => $this->_requestTime()
      *   ])->render('page');
      *
      * Note: Prefixed with underscore to avoid conflicts with developer-defined methods.
      *
      * @return float Duration in seconds (with microsecond precision)
      */
-    public function _requestExecutionTime()
+    public function _requestTime()
     {
-        return microtime(true) - $this->request_start_time;
+        return microtime(true) - $this->request_start;
     }
 }

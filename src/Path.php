@@ -7,16 +7,19 @@
  * All paths use the url_separator setting from configuration for consistency.
  *
  * Common Methods:
- *   - Path::app()    - Application directory path
- *   - Path::base()   - Root directory path
- *   - Path::sys()    - System directory path
- *   - Path::vault()  - Vault directory path
- *   - Path::tmp()    - Temporary directory path
- *   - Path::view()   - View file path (respects url_separator)
+ *   - Path::app($path)    - Application directory path
+ *   - Path::base($path)   - Root directory path
+ *   - Path::sys($path)    - System directory path
+ *   - Path::vault($path)  - Vault directory path
+ *   - Path::tmp($path)    - Temporary directory path
+ *   - Path::view($fileName) - View file path (respects url_separator)
  *
  * Examples:
- *   Path::view('blog/show')     → application/views/blog/show.php
- *   Path::view('errors/404')    → application/views/errors/404.php
+ *   Path::app()                    → /var/www/myapp/application/
+ *   Path::app('storage/index')     → /var/www/myapp/application/storage/index
+ *   Path::base('public/assets')    → /var/www/myapp/public/assets
+ *   Path::view('blog/show')        → /var/www/myapp/application/views/blog/show.php
+ *   Path::vault('logs/error.log')  → /var/www/myapp/vault/logs/error.log
  *
  * @author Geoffrey Okongo <code@rachie.dev>
  * @copyright 2015 - 2030 Geoffrey Okongo
@@ -50,13 +53,22 @@ class Path {
 	 * where controllers, models, and views are stored.
 	 *
 	 * Example:
-	 *   Path::app()  // /var/www/myapp/application/
+	 *   Path::app()                    // /var/www/myapp/application/
+	 *   Path::app('storage/uploads')     // /var/www/myapp/application/storage/uploads
+	 *   Path::app('database/migrations')   // /var/www/myapp/application/database/migrations
 	 *
-	 * @return string Absolute path to application directory
+	 * @param string|null $path Optional path to append (uses url_separator from config)
+	 * @return string Absolute path to application directory or file
 	 */
-	public static function app()
+	public static function app($path = null)
 	{
-		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR;
+		$basePath = Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'application' . DIRECTORY_SEPARATOR;
+
+		if ($path === null) {
+			return $basePath;
+		}
+
+		return $basePath . self::normalizePath($path);
 	}
 
 	/**
@@ -65,13 +77,22 @@ class Path {
 	 * Returns the absolute path to the application root directory.
 	 *
 	 * Example:
-	 *   Path::base()  // /var/www/myapp/
+	 *   Path::base()                  // /var/www/myapp/
+	 *   Path::base('public/assets')   // /var/www/myapp/public/assets
+	 *   Path::base('composer.json')   // /var/www/myapp/composer.json
 	 *
-	 * @return string Absolute path to root directory
+	 * @param string|null $path Optional path to append (uses url_separator from config)
+	 * @return string Absolute path to root directory or file
 	 */
-	public static function base()
+	public static function base($path = null)
 	{
-		return Registry::settings()['root'] . DIRECTORY_SEPARATOR;
+		$basePath = Registry::settings()['root'] . DIRECTORY_SEPARATOR;
+
+		if ($path === null) {
+			return $basePath;
+		}
+
+		return $basePath . self::normalizePath($path);
 	}
 
 	/**
@@ -81,13 +102,22 @@ class Path {
 	 * where framework core files are stored.
 	 *
 	 * Example:
-	 *   Path::sys()  // /var/www/myapp/system/
+	 *   Path::sys()                   // /var/www/myapp/system/
+	 *   Path::sys('bootstra.php')      // /var/www/myapp/system/bootstrap.php
+	 *   Path::sys('Exceptions/Shutdown')   // /var/www/myapp/system/Exceptions/Shutdown
 	 *
-	 * @return string Absolute path to system directory
+	 * @param string|null $path Optional path to append (uses url_separator from config)
+	 * @return string Absolute path to system directory or file
 	 */
-	public static function sys()
+	public static function sys($path = null)
 	{
-		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR;
+		$basePath = Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR;
+
+		if ($path === null) {
+			return $basePath;
+		}
+
+		return $basePath . self::normalizePath($path);
 	}
 
 	/**
@@ -97,13 +127,22 @@ class Path {
 	 * private application data is stored (logs, cache, sessions, tmp).
 	 *
 	 * Example:
-	 *   Path::vault()  // /var/www/myapp/vault/
+	 *   Path::vault()                 // /var/www/myapp/vault/
+	 *   Path::vault('logs/error.log') // /var/www/myapp/vault/logs/error.log
+	 *   Path::vault('cache/data')     // /var/www/myapp/vault/cache/data
 	 *
-	 * @return string Absolute path to vault directory
+	 * @param string|null $path Optional path to append (uses url_separator from config)
+	 * @return string Absolute path to vault directory or file
 	 */
-	public static function vault()
+	public static function vault($path = null)
 	{
-		return Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'vault' . DIRECTORY_SEPARATOR;
+		$basePath = Registry::settings()['root'] . DIRECTORY_SEPARATOR . 'vault' . DIRECTORY_SEPARATOR;
+
+		if ($path === null) {
+			return $basePath;
+		}
+
+		return $basePath . self::normalizePath($path);
 	}
 
 	/**
@@ -113,13 +152,22 @@ class Path {
 	 * where compiled views and cache files are stored.
 	 *
 	 * Example:
-	 *   Path::tmp()  // /var/www/myapp/vault/tmp/
+	 *   Path::tmp()                      // /var/www/myapp/vault/tmp/
+	 *   Path::tmp('backup')   // /var/www/myapp/vault/tmp/backup
+	 *   Path::tmp('session/sess_123')    // /var/www/myapp/vault/tmp/session/sess_123
 	 *
-	 * @return string Absolute path to tmp directory
+	 * @param string|null $path Optional path to append (uses url_separator from config)
+	 * @return string Absolute path to tmp directory or file
 	 */
-	public static function tmp()
+	public static function tmp($path = null)
 	{
-		return self::vault() . 'tmp' . DIRECTORY_SEPARATOR;
+		$basePath = self::vault() . 'tmp' . DIRECTORY_SEPARATOR;
+
+		if ($path === null) {
+			return $basePath;
+		}
+
+		return $basePath . self::normalizePath($path);
 	}
 
 	/**
@@ -202,6 +250,32 @@ class Path {
 			. 'application' . DIRECTORY_SEPARATOR
 			. 'views' . DIRECTORY_SEPARATOR
 			. $relativePath;
+	}
+
+	/**
+	 * Normalize a path string to use proper directory separators
+	 *
+	 * Converts a path using the configured url_separator (e.g., '/' or '.')
+	 * into a path using the system's DIRECTORY_SEPARATOR for cross-platform
+	 * compatibility.
+	 *
+	 * Examples:
+	 *   normalizePath('storage/index')  → storage\index (Windows) or storage/index (Unix)
+	 *   normalizePath('logs/error.log') → logs\error.log (Windows) or logs/error.log (Unix)
+	 *
+	 * @param string $path Path string to normalize
+	 * @return string Normalized path with proper separators
+	 */
+	private static function normalizePath($path)
+	{
+		// Get separator from settings (defaults to '/' if not set)
+		$separator = Registry::settings()['url_separator'] ?? '/';
+
+		// Split path by separator and filter out empty elements
+		$parts = array_filter(explode($separator, $path), 'strlen');
+
+		// Join with system directory separator
+		return join(DIRECTORY_SEPARATOR, $parts);
 	}
 
 }

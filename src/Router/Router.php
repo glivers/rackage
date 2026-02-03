@@ -384,7 +384,7 @@ class Router {
 	 * @return void
 	 * @throws RouteException If dispatch fails
 	 */
-	private function dispatchController()
+	private function dispatchController() 
 	{
 		// Create controller instance
 		$dispatch = new $this->controller;
@@ -397,7 +397,7 @@ class Router {
 		}
 
 		// Initialize controller properties
-		$dispatch->_setRachieProperties();
+		$dispatch->_addSettings();
 
 		// Get reflection info for method parameter handling
 		$reflection = new ReflectionClass($dispatch);
